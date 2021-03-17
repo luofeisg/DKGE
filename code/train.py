@@ -105,7 +105,7 @@ class DynamicKGE(nn.Module):
 
     def rgcn(self, R, D, H, target='entity'):
         output = torch.zeros(config.batch_size, config.max_context_num+1, config.dim).cuda()
-        for i in range(config.batch_size):
+        for i in range(R.shape[0]):
             relation_type = R[i].view(-1).long()
             w = torch.index_select(self.entity_gcn_weight, 0, relation_type).view(config.max_context_num + 1,
                                                                                   config.max_context_num + 1,
