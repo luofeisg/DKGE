@@ -25,7 +25,7 @@ class DynamicKGE(nn.Module):
         self.entity_context = nn.Embedding(config.entity_total + 1, config.dim, padding_idx=config.entity_total)
         self.relation_context = nn.Embedding(config.relation_total + 1, config.dim, padding_idx=config.relation_total)
 
-        self.entity_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim))
+        self.entity_gcn_weight = nn.Parameter(torch.Tensor(config.relation_total * 2 + 2, config.dim, config.dim)) # relation_total*2: self-connection; relation_total*2 + 1: padding index
         self.relation_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim))
 
         self.gate_entity = nn.Parameter(torch.Tensor(config.dim))
@@ -103,6 +103,20 @@ class DynamicKGE(nn.Module):
         sg = torch.sum(torch.mul(torch.unsqueeze(alpha, dim=2), adj_vec_list), dim=1)  # batch x dim
         return sg
 
+    def rgcn(self, R, D, H, target='entity'):
+        output = torch.zeros(config.batch_size, config.max_context_num+1, config.dim).cuda()
+        for i in range(config.batch_size):
+            relation_type = R[i].view(-1).long()
+            w = torch.index_select(self.entity_gcn_weight, 0, relation_type).view(config.max_context_num + 1,
+                                                                                  config.max_context_num + 1,
+                                                                                  config.dim,
+                                                                                  -1)
+            output_i = torch.mul(D[i].unsqueeze(-1).unsqueeze(-1), w)
+            output_i = torch.matmul(H[i].unsqueeze(1), output_i).squeeze(-2).sum(1)
+            output[i] = output_i.detach()
+
+        return output
+
     def gcn(self, A, H, target='entity'):
         support = torch.matmul(A, H)
         if target == 'entity':
@@ -143,7 +157,7 @@ class DynamicKGE(nn.Module):
             r = str(int(pos_r[i]))
             self.pr_o[r] = pr_o[i].detach().cpu().numpy().tolist()
 
-    def forward(self, epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A):
+    def forward(self, epoch, golden_triples, negative_triples, ph_R, ph_D, pr_A, pt_R, pt_D, nh_R, nh_D, nr_A, nt_R, nt_D):
         # multi golden and multi negative
         pos_h, pos_r, pos_t = golden_triples
         neg_h, neg_r, neg_t = negative_triples
@@ -169,11 +183,14 @@ class DynamicKGE(nn.Module):
         pr_adj_relation_vec_list = self.get_adj_relation_vec(p_r, pr_adj_relation_list)
         nr_adj_relation_vec_list = self.get_adj_relation_vec(n_r, nr_adj_relation_list)
 
-        # gcn
-        ph_adj_entity_vec_list = self.gcn(ph_A, ph_adj_entity_vec_list, target='entity')
-        pt_adj_entity_vec_list = self.gcn(pt_A, pt_adj_entity_vec_list, target='entity')
-        nh_adj_entity_vec_list = self.gcn(nh_A, nh_adj_entity_vec_list, target='entity')
-        nt_adj_entity_vec_list = self.gcn(nt_A, nt_adj_entity_vec_list, target='entity')
+        # gcn & rgcn
+        t1 = time.time()
+        ph_adj_entity_vec_list = self.rgcn(ph_R, ph_D, ph_adj_entity_vec_list, target='entity')
+        pt_adj_entity_vec_list = self.rgcn(pt_R, pt_D, pt_adj_entity_vec_list, target='entity')
+        nh_adj_entity_vec_list = self.rgcn(nh_R, nh_D, nh_adj_entity_vec_list, target='entity')
+        nt_adj_entity_vec_list = self.rgcn(nt_R, nt_D, nt_adj_entity_vec_list, target='entity')
+        t2 = time.time()
+        print("rgcn: " + str(t2-t1))
         pr_adj_relation_vec_list = self.gcn(pr_A, pr_adj_relation_vec_list, target='relation')
         nr_adj_relation_vec_list = self.gcn(nr_A, nr_adj_relation_vec_list, target='relation')
 
@@ -230,12 +247,13 @@ def main():
         print('----------training the ' + str(epoch) + ' epoch----------')
         epoch_avg_loss = 0.0
         for batch in range(config.nbatchs):
+            t1 = time.time()
             optimizer.zero_grad()
             golden_triples, negative_triples = config.get_batch(config.batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts)
-            ph_A, pr_A, pt_A = config.get_batch_A(golden_triples, config.entity_A, config.relation_A)
-            nh_A, nr_A, nt_A = config.get_batch_A(negative_triples, config.entity_A, config.relation_A)
+            ph_R, ph_D, pr_A, pt_R, pt_D = config.get_batch_A(golden_triples, config.entity_R, config.entity_D, config.relation_A)
+            nh_R, nh_D, nr_A, nt_R, nt_D = config.get_batch_A(negative_triples, config.entity_R, config.entity_D, config.relation_A)
 
-            p_scores, n_scores = dynamicKGE(epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A)
+            p_scores, n_scores = dynamicKGE(epoch, golden_triples, negative_triples, ph_R, ph_D, pr_A, pt_R, pt_D, nh_R, nh_D, nr_A, nt_R, nt_D)
             y = torch.Tensor([-1]).cuda()
             loss = criterion(p_scores, n_scores, y)
 
@@ -244,6 +262,8 @@ def main():
 
             epoch_avg_loss += (float(loss.item()) / config.nbatchs)
             torch.cuda.empty_cache()
+            t2 = time.time()
+            print("time for 1 batch: " + str(t2-t1))
         end_time = time.time()
 
         print('----------epoch avg loss: ' + str(epoch_avg_loss) + ' ----------')

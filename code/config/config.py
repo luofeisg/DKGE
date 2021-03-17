@@ -60,7 +60,7 @@ print('result directory: ' + str(res_dir))
 
 if not test_mode:
     print("Constructing adj table...")
-    entity_adj_table, relation_adj_table, max_context_num, entity_A, relation_A = construct_adj_table(train_list, entity_total,
+    entity_adj_table, relation_adj_table, max_context_num, entity_R, entity_D, relation_A = construct_adj_table(train_list, entity_total,
                                                                                                       relation_total, max_context)
     print("Constructing adj table completed.")
 

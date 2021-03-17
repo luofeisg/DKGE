@@ -2,6 +2,7 @@ import random
 import torch
 import torch.nn as nn
 import numpy as np
+import time
 
 
 def read_file(file_name):
@@ -102,14 +103,18 @@ def find_relation_context(h, r, t, entity_adj_table_with_rel):
 
 def construct_adj_table(train_list, entity_total, relation_total, max_context):
     entity_adj_table_with_rel = dict()  # {head_entity: [(tail_entity, relation)]}
+    # entity_adj_table_with_rel_inv = dict()  # {tail_entity: [(head_entity, relation)]}
     entity_adj_table = dict()  # {head_entity: [tail_entity]}
     relation_adj_table = dict()  # {relation: [[edge]]}
+    relation_table = dict()
 
     for train_data in train_list:
         h, r, t = train_data
         entity_adj_table.setdefault(h, set()).add(t)
         entity_adj_table.setdefault(t, set()).add(h)
         entity_adj_table_with_rel.setdefault(h, list()).append((t, r))
+        # entity_adj_table_with_rel_inv.setdefault(t, list()).append((h, r))
+        relation_table.setdefault((h, t), list()).append(r)
 
     for train_data in train_list:
         h, r, t = train_data
@@ -130,37 +135,81 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
             res = res[:max_context_num]
             relation_adj_table[k] = set(res)
 
-    entity_DAD = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
-    relation_DAD = torch.Tensor(relation_total, max_context_num + 1, max_context_num + 1).cuda()
+    entity_R = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()  # relation type linking neighbor entities
+    entity_D = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
 
+    time1 = time.time()
+    print("start to construct R matrix")
     for entity in range(entity_total):
-        A = torch.eye(max_context_num + 1, max_context_num + 1).cuda()
-        tmp = torch.ones(max_context_num + 1).cuda()
-        A[0, :max_context_num + 1] = tmp
-        A[:max_context_num + 1, 0] = tmp
-
-        D = np.eye(max_context_num + 1, max_context_num + 1)
-        i = list(range(max_context_num + 1))
-        D[i, i] = 2
-        D[0][0] = max_context_num + 1
+        R = (torch.ones(max_context_num + 1, max_context_num + 1) * (2 * relation_total + 1)).cuda() # padding index: 2 * relation_total + 1
+        tmp = torch.eye(max_context_num + 1, max_context_num + 1).cuda()
+        R = R - tmp # index 2 * relation_total: self-connection
 
         if entity in entity_adj_table:
             neighbours_list = list(entity_adj_table[entity])
-            for index, neighbour in enumerate(neighbours_list):
-                if neighbour not in entity_adj_table:
+            for index1, neighbour1 in enumerate(neighbours_list):
+                if (entity, neighbour1) in relation_table:
+                    R[0][index1+1] = relation_table[(entity, neighbour1)][0]
+                if (neighbour1, entity) in relation_table:
+                    R[index1+1][0] = relation_table[(neighbour1, entity)][0] + relation_total
+                if neighbour1 not in entity_adj_table:
                     continue
                 for index2, neighbour2 in enumerate(neighbours_list):
-                    if index == index2:
+                    if index1 == index2:
                         continue
-                    if neighbour2 in entity_adj_table[neighbour]:
-                        A[index+1, index2+1] = 1
-                        D[index+1][index+1] += 1
+                    if neighbour2 in entity_adj_table[neighbour1]:
+                        if (neighbour1, neighbour2) in relation_table:
+                            R[index1+1, index2+1] = relation_table[(neighbour1, neighbour2)][0]
+                        if (neighbour2, neighbour1) in relation_table:
+                            R[index2+1, index1+1] = relation_table[(neighbour2, neighbour1)][0] + relation_total
 
-        D = np.linalg.inv(D)
-        D = torch.Tensor(D).cuda()
-        D[i, i] = torch.sqrt(D[i, i])
+        entity_R[entity] = R
 
-        entity_DAD[entity] = D.mm(A).mm(D)
+    time2 = time.time()
+    print("construct R matrix finished. Time elapsed:" + str(time2 - time1))
+    print("start to construct D matrix")
+    entity_D = torch.ones(entity_total, max_context_num + 1, max_context_num + 1).cuda()
+    # for i in range(entity_R.shape[0]):
+    #     for j in range(entity_R.shape[1]):
+    #         uni, inv, count = torch.unique(entity_R[i][j], return_inverse=True, return_counts=True)
+    #         entity_D[i][j] = 1.0/count[inv]
+    time3 = time.time()
+    print("construct D matrix finished. Time elapsed:" + str(time3 - time2))
+
+    # entity_DAD = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
+    # relation_DAD = torch.Tensor(relation_total, max_context_num + 1, max_context_num + 1).cuda()
+    #
+    # for entity in range(entity_total):
+    #     A = torch.eye(max_context_num + 1, max_context_num + 1).cuda()
+    #     tmp = torch.ones(max_context_num + 1).cuda()
+    #     A[0, :max_context_num + 1] = tmp
+    #     A[:max_context_num + 1, 0] = tmp
+    #
+    #     D = np.eye(max_context_num + 1, max_context_num + 1)
+    #     i = list(range(max_context_num + 1))
+    #     D[i, i] = 2
+    #     D[0][0] = max_context_num + 1
+    #
+    #     if entity in entity_adj_table:
+    #         neighbours_list = list(entity_adj_table[entity])
+    #         for index, neighbour in enumerate(neighbours_list):
+    #             if neighbour not in entity_adj_table:
+    #                 continue
+    #             for index2, neighbour2 in enumerate(neighbours_list):
+    #                 if index == index2:
+    #                     continue
+    #                 if neighbour2 in entity_adj_table[neighbour]:
+    #                     A[index+1, index2+1] = 1
+    #                     D[index+1][index+1] += 1
+    #
+    #     D = np.linalg.inv(D)
+    #     D = torch.Tensor(D).cuda()
+    #
+    #     # entity_DAD[entity] = D.mm(A)
+    #     D[i, i] = torch.sqrt(D[i, i])
+    #     entity_DAD[entity] = D.mm(A).mm(D)
+
+    relation_DAD = torch.Tensor(relation_total, max_context_num + 1, max_context_num + 1).cuda()
 
     for relation in range(relation_total):
         A = torch.eye(max_context_num + 1, max_context_num + 1).cuda()
@@ -209,7 +258,7 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
 
         relation_adj_table[k] = res + [relation_total] * 2 * (max_context_num - len(res) // 2)  # 补padding
 
-    return entity_adj_table, relation_adj_table, max_context_num, entity_DAD, relation_DAD
+    return entity_adj_table, relation_adj_table, max_context_num, entity_R, entity_D, relation_DAD
     # return entity_adj_table, max_context_num, entity_DAD
 
 
@@ -279,6 +328,6 @@ def get_batch(batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts):
            (nhs[epoch, batch * batch_size: r], nrs[epoch, batch * batch_size: r], nts[epoch, batch * batch_size: r])
 
 
-def get_batch_A(triples, entity_A, relation_A):
+def get_batch_A(triples, entity_R, entity_D, relation_A):
     h, r, t = triples
-    return entity_A[h.cpu().numpy()], relation_A[r.cpu().numpy()], entity_A[t.cpu().numpy()]
+    return entity_R[h.cpu().numpy()], entity_D[h.cpu().numpy()], relation_A[r.cpu().numpy()], entity_R[t.cpu().numpy()], entity_D[t.cpu().numpy()]
