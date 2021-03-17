@@ -184,13 +184,13 @@ class DynamicKGE(nn.Module):
         nr_adj_relation_vec_list = self.get_adj_relation_vec(n_r, nr_adj_relation_list)
 
         # gcn & rgcn
-        t1 = time.time()
+        # t1 = time.time()
         ph_adj_entity_vec_list = self.rgcn(ph_R, ph_D, ph_adj_entity_vec_list, target='entity')
         pt_adj_entity_vec_list = self.rgcn(pt_R, pt_D, pt_adj_entity_vec_list, target='entity')
         nh_adj_entity_vec_list = self.rgcn(nh_R, nh_D, nh_adj_entity_vec_list, target='entity')
         nt_adj_entity_vec_list = self.rgcn(nt_R, nt_D, nt_adj_entity_vec_list, target='entity')
-        t2 = time.time()
-        print("rgcn: " + str(t2-t1))
+        # t2 = time.time()
+        # print("rgcn: " + str(t2-t1))
         pr_adj_relation_vec_list = self.gcn(pr_A, pr_adj_relation_vec_list, target='relation')
         nr_adj_relation_vec_list = self.gcn(nr_A, nr_adj_relation_vec_list, target='relation')
 
@@ -263,7 +263,8 @@ def main():
             epoch_avg_loss += (float(loss.item()) / config.nbatchs)
             torch.cuda.empty_cache()
             t2 = time.time()
-            print("time for 1 batch: " + str(t2-t1))
+            if batch == 0:
+                print("time for 1st batch: " + str(t2-t1))
         end_time = time.time()
 
         print('----------epoch avg loss: ' + str(epoch_avg_loss) + ' ----------')
