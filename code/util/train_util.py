@@ -136,7 +136,6 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
             relation_adj_table[k] = set(res)
 
     entity_R = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()  # relation type linking neighbor entities
-    entity_D = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
 
     time1 = time.time()
     print("start to construct R matrix")
@@ -168,11 +167,12 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
     time2 = time.time()
     print("construct R matrix finished. Time elapsed:" + str(time2 - time1))
     print("start to construct D matrix")
-    entity_D = torch.ones(entity_total, max_context_num + 1, max_context_num + 1).cuda()
-    # for i in range(entity_R.shape[0]):
-    #     for j in range(entity_R.shape[1]):
-    #         uni, inv, count = torch.unique(entity_R[i][j], return_inverse=True, return_counts=True)
-    #         entity_D[i][j] = 1.0/count[inv]
+    # entity_D = torch.ones(entity_total, max_context_num + 1, max_context_num + 1).cuda()
+    entity_D = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
+    for i in range(entity_R.shape[0]):
+        for j in range(entity_R.shape[1]):
+            uni, inv, count = torch.unique(entity_R[i][j], return_inverse=True, return_counts=True)
+            entity_D[i][j] = 1.0/count[inv]
     time3 = time.time()
     print("construct D matrix finished. Time elapsed:" + str(time3 - time2))
 
