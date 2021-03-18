@@ -112,7 +112,7 @@ class DKGE_Online(nn.Module):
 
     def calc_subgraph_vec(self, o, adj_vec_list, target="entity"):
         alpha = self.score(o, adj_vec_list, target)
-        alpha = F.softmax(alpha)
+        alpha = F.softmax(alpha, dim=1)
 
         sg = torch.sum(torch.mul(torch.unsqueeze(alpha, dim=2), adj_vec_list), dim=1)  # batch x dim
         return sg
@@ -204,12 +204,12 @@ class DKGE_Online(nn.Module):
         pr_sg = self.calc_subgraph_vec(p_r, pr_adj_relation_vec_list, target='relation')
         nr_sg = self.calc_subgraph_vec(n_r, nr_adj_relation_vec_list, target='relation')
 
-        ph_o = torch.mul(F.sigmoid(self.gate_entity), p_h) + torch.mul(1 - F.sigmoid(self.gate_entity), ph_sg)
-        pt_o = torch.mul(F.sigmoid(self.gate_entity), p_t) + torch.mul(1 - F.sigmoid(self.gate_entity), pt_sg)
-        nh_o = torch.mul(F.sigmoid(self.gate_entity), n_h) + torch.mul(1 - F.sigmoid(self.gate_entity), nh_sg)
-        nt_o = torch.mul(F.sigmoid(self.gate_entity), n_t) + torch.mul(1 - F.sigmoid(self.gate_entity), nt_sg)
-        pr_o = torch.mul(F.sigmoid(self.gate_relation), p_r) + torch.mul(1 - F.sigmoid(self.gate_relation), pr_sg)
-        nr_o = torch.mul(F.sigmoid(self.gate_relation), n_r) + torch.mul(1 - F.sigmoid(self.gate_relation), nr_sg)
+        ph_o = torch.mul(torch.sigmoid(self.gate_entity), p_h) + torch.mul(1 - torch.sigmoid(self.gate_entity), ph_sg)
+        pt_o = torch.mul(torch.sigmoid(self.gate_entity), p_t) + torch.mul(1 - torch.sigmoid(self.gate_entity), pt_sg)
+        nh_o = torch.mul(torch.sigmoid(self.gate_entity), n_h) + torch.mul(1 - torch.sigmoid(self.gate_entity), nh_sg)
+        nt_o = torch.mul(torch.sigmoid(self.gate_entity), n_t) + torch.mul(1 - torch.sigmoid(self.gate_entity), nt_sg)
+        pr_o = torch.mul(torch.sigmoid(self.gate_relation), p_r) + torch.mul(1 - torch.sigmoid(self.gate_relation), pr_sg)
+        nr_o = torch.mul(torch.sigmoid(self.gate_relation), n_r) + torch.mul(1 - torch.sigmoid(self.gate_relation), nr_sg)
 
         # score for loss
         p_score = self._calc(ph_o, pt_o, pr_o)
@@ -247,7 +247,7 @@ def main():
     else:
         optimizer = optim.SGD(dynamicKGE.parameters(), lr=config.learning_rate)
 
-    criterion = nn.MarginRankingLoss(config.margin, False).cuda()
+    criterion = nn.MarginRankingLoss(config.margin, reduction='sum').cuda()
 
     ent_emb_nochange_list = list(config.entity_set - affected_entities - added_entities)
     rel_emb_nochange_list = list(config.relation_set - affected_relations - added_relations)
