@@ -49,6 +49,7 @@ class DynamicKGE(nn.Module):
 
         stdv = 1. / math.sqrt(self.entity_gcn_weight.size(1))
         self.entity_gcn_weight.data.uniform_(-stdv, stdv)
+        self.entity_gcn_weight[config.relation_total*2+1] = 0.
 
         stdv = 1. / math.sqrt(self.relation_gcn_weight.size(1))
         self.relation_gcn_weight.data.uniform_(-stdv, stdv)
