@@ -25,7 +25,7 @@ class DynamicKGE(nn.Module):
         self.entity_context = nn.Embedding(config.entity_total + 1, config.dim, padding_idx=config.entity_total)
         self.relation_context = nn.Embedding(config.relation_total + 1, config.dim, padding_idx=config.relation_total)
 
-        self.entity_gcn_weight = nn.Parameter(torch.Tensor(config.relation_total * 2 + 2, config.dim, config.dim)) # relation_total*2: self-connection; relation_total*2 + 1: padding index
+        self.entity_gcn_weight = nn.Parameter(torch.Tensor(config.relation_total * 2 + 1, config.dim, config.dim)) # relation_total*2: self-connection
         self.relation_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim))
 
         self.gate_entity = nn.Parameter(torch.Tensor(config.dim))
@@ -49,7 +49,8 @@ class DynamicKGE(nn.Module):
 
         stdv = 1. / math.sqrt(self.entity_gcn_weight.size(1))
         self.entity_gcn_weight.data.uniform_(-stdv, stdv)
-        self.entity_gcn_weight[config.relation_total*2+1] = 0.
+        # self.entity_gcn_weight[config.relation_total*2+1] = 0.
+        # self.entity_gcn_weight[config.relation_total * 2 + 1].detach()
 
         stdv = 1. / math.sqrt(self.relation_gcn_weight.size(1))
         self.relation_gcn_weight.data.uniform_(-stdv, stdv)
@@ -107,11 +108,10 @@ class DynamicKGE(nn.Module):
     def rgcn(self, R, D, H, target='entity'):
         output = torch.Tensor(R.shape[0], config.max_context_num+1, config.dim).cuda()
         for i in range(R.shape[0]):
-            relation_type = R[i].view(-1).long()
-            w = torch.index_select(self.entity_gcn_weight, 0, relation_type).view(config.max_context_num + 1,
-                                                                                  config.max_context_num + 1,
-                                                                                  config.dim,
-                                                                                  -1)
+            relation_type = R[i].view(-1).long()    # relation_total*2 + 1: padding index
+            weight = torch.cat((self.entity_gcn_weight, torch.zeros(1, config.dim, config.dim).cuda()), dim=0)
+            w = torch.index_select(weight, 0, relation_type).view(config.max_context_num + 1,
+                                                                  config.max_context_num + 1, config.dim, -1)
             output_i = torch.mul(D[i].unsqueeze(-1).unsqueeze(-1), w)
             output_i = torch.matmul(H[i].unsqueeze(1), output_i).squeeze(-2).sum(1)
             output[i] = output_i.detach()
