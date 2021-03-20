@@ -5,9 +5,6 @@ import torch
 from util.train_util import *
 from util.parameter_util import *
 
-
-# os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-
 parser = argparse.ArgumentParser(description='parameters')
 parser.add_argument('-e', '--epochs', type=int, dest='train_epochs', help='total train epochs', required=False, default=21)
 parser.add_argument('-b', '--batchsize', type=int, dest='batchsize', help='batch size', required=False, default=500)
@@ -18,8 +15,10 @@ parser.add_argument('-n', '--norm', type=int, dest="norm", help="normalization",
 parser.add_argument('-o', '--optim', type=str, dest="optim", help="optimizer", required=False, default="SGD")
 parser.add_argument('-p', '--path', type=str, dest="dataset", help="dataset path", required=False, default="YAGO-3SP/snapshot1")
 parser.add_argument('-t', '--test_mode', type=bool, dest="test_mode", help="if test mode on", required=False, default=False)
+parser.add_argument('-g', '--gpu', type=int, dest="gpu_id", help="select gpu", required=False, default=0)
 args = parser.parse_args()
 
+os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
 
 dataset_v1 = args.dataset
 
