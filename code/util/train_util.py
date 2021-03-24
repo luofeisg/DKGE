@@ -136,6 +136,7 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
             relation_adj_table[k] = set(res)
 
     entity_R = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()  # relation type linking neighbor entities
+    entity_nn = torch.IntTensor(entity_total).cuda()    # number of neighbors
 
     time1 = time.time()
     print("start to construct R matrix")
@@ -163,16 +164,17 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
                             R[index2+1, index1+1] = relation_table[(neighbour2, neighbour1)][0] + relation_total
 
         entity_R[entity] = R
+        entity_nn[entity] = len(neighbours_list)
 
     time2 = time.time()
     print("construct R matrix finished. Time elapsed:" + str(time2 - time1))
     print("start to construct D matrix")
-    # entity_D = torch.ones(entity_total, max_context_num + 1, max_context_num + 1).cuda()
-    entity_D = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
-    for i in range(entity_R.shape[0]):
-        for j in range(entity_R.shape[1]):
-            uni, inv, count = torch.unique(entity_R[i][j], return_inverse=True, return_counts=True)
-            entity_D[i][j] = 1.0/count[inv]
+    entity_D = torch.ones(entity_total, max_context_num + 1, max_context_num + 1).cuda()
+    # entity_D = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
+    # for i in range(entity_R.shape[0]):
+    #     for j in range(entity_R.shape[1]):
+    #         uni, inv, count = torch.unique(entity_R[i][j], return_inverse=True, return_counts=True)
+    #         entity_D[i][j] = 1.0/count[inv]
     time3 = time.time()
     print("construct D matrix finished. Time elapsed:" + str(time3 - time2))
 
@@ -258,7 +260,7 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
 
         relation_adj_table[k] = res + [relation_total] * 2 * (max_context_num - len(res) // 2)  # 补padding
 
-    return entity_adj_table, relation_adj_table, max_context_num, entity_R, entity_D, relation_DAD
+    return entity_adj_table, relation_adj_table, max_context_num, entity_R, entity_D, entity_nn, relation_DAD
     # return entity_adj_table, max_context_num, entity_DAD
 
 
@@ -328,6 +330,6 @@ def get_batch(batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts):
            (nhs[epoch, batch * batch_size: r], nrs[epoch, batch * batch_size: r], nts[epoch, batch * batch_size: r])
 
 
-def get_batch_A(triples, entity_R, entity_D, relation_A):
+def get_batch_A(triples, entity_R, entity_D, entity_nn, relation_A):
     h, r, t = triples
-    return entity_R[h.cpu().numpy()], entity_D[h.cpu().numpy()], relation_A[r.cpu().numpy()], entity_R[t.cpu().numpy()], entity_D[t.cpu().numpy()]
+    return entity_R[h.cpu().numpy()], entity_D[h.cpu().numpy()], entity_nn[h.cpu().numpy()], relation_A[r.cpu().numpy()], entity_R[t.cpu().numpy()], entity_D[t.cpu().numpy()], entity_nn[t.cpu().numpy()]

@@ -105,16 +105,20 @@ class DynamicKGE(nn.Module):
         sg = torch.sum(torch.mul(torch.unsqueeze(alpha, dim=2), adj_vec_list), dim=1)  # batch x dim
         return sg
 
-    def rgcn(self, R, D, H, target='entity'):
+    def rgcn(self, R, D, nn, H, target='entity'):
         output = torch.Tensor(R.shape[0], config.max_context_num+1, config.dim).cuda()
         for i in range(R.shape[0]):
-            relation_type = R[i].view(-1).long()    # relation_total*2 + 1: padding index
+            n = nn[i] # number of neighbors
+            R_i = R[i][:n+1, :n+1]
+            D_i = D[i][:n+1, :n+1]
+            H_i = H[i][:n+1]
+            relation_type = R_i[:n+1, :n+1].reshape(-1).long()    # relation_total*2 + 1: padding index
             weight = torch.cat((self.entity_gcn_weight, torch.zeros(1, config.dim, config.dim).cuda()), dim=0)
-            w = torch.index_select(weight, 0, relation_type).view(config.max_context_num + 1,
-                                                                  config.max_context_num + 1, config.dim, -1)
-            output_i = torch.mul(D[i].unsqueeze(-1).unsqueeze(-1), w)
-            output_i = torch.matmul(H[i].unsqueeze(1), output_i).squeeze(-2).sum(1)
-            output[i] = output_i.detach()
+            w = torch.index_select(weight, 0, relation_type).view(n+1, n+1, config.dim, -1)
+            output_i = torch.mul(D_i.unsqueeze(-1).unsqueeze(-1), w)
+            output_i = torch.matmul(H_i.unsqueeze(1), output_i).squeeze(-2).sum(1)
+            output_i = F.relu(output_i)
+            output[i][:n+1] = output_i.detach()
 
         return output
 
@@ -158,7 +162,7 @@ class DynamicKGE(nn.Module):
             r = str(int(pos_r[i]))
             self.pr_o[r] = pr_o[i].detach().cpu().numpy().tolist()
 
-    def forward(self, epoch, golden_triples, negative_triples, ph_R, ph_D, pr_A, pt_R, pt_D, nh_R, nh_D, nr_A, nt_R, nt_D):
+    def forward(self, epoch, golden_triples, negative_triples, ph_R, ph_D, ph_nn, pr_A, pt_R, pt_D, pt_nn, nh_R, nh_D, nh_nn, nr_A, nt_R, nt_D, nt_nn):
         # multi golden and multi negative
         pos_h, pos_r, pos_t = golden_triples
         neg_h, neg_r, neg_t = negative_triples
@@ -186,10 +190,10 @@ class DynamicKGE(nn.Module):
 
         # gcn & rgcn
         # t1 = time.time()
-        ph_adj_entity_vec_list = self.rgcn(ph_R, ph_D, ph_adj_entity_vec_list, target='entity')
-        pt_adj_entity_vec_list = self.rgcn(pt_R, pt_D, pt_adj_entity_vec_list, target='entity')
-        nh_adj_entity_vec_list = self.rgcn(nh_R, nh_D, nh_adj_entity_vec_list, target='entity')
-        nt_adj_entity_vec_list = self.rgcn(nt_R, nt_D, nt_adj_entity_vec_list, target='entity')
+        ph_adj_entity_vec_list = self.rgcn(ph_R, ph_D, ph_nn, ph_adj_entity_vec_list, target='entity')
+        pt_adj_entity_vec_list = self.rgcn(pt_R, pt_D, pt_nn, pt_adj_entity_vec_list, target='entity')
+        nh_adj_entity_vec_list = self.rgcn(nh_R, nh_D, nh_nn, nh_adj_entity_vec_list, target='entity')
+        nt_adj_entity_vec_list = self.rgcn(nt_R, nt_D, nt_nn, nt_adj_entity_vec_list, target='entity')
         # t2 = time.time()
         # print("rgcn: " + str(t2-t1))
         pr_adj_relation_vec_list = self.gcn(pr_A, pr_adj_relation_vec_list, target='relation')
@@ -251,10 +255,10 @@ def main():
             t1 = time.time()
             optimizer.zero_grad()
             golden_triples, negative_triples = config.get_batch(config.batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts)
-            ph_R, ph_D, pr_A, pt_R, pt_D = config.get_batch_A(golden_triples, config.entity_R, config.entity_D, config.relation_A)
-            nh_R, nh_D, nr_A, nt_R, nt_D = config.get_batch_A(negative_triples, config.entity_R, config.entity_D, config.relation_A)
+            ph_R, ph_D, ph_nn, pr_A, pt_R, pt_D, pt_nn = config.get_batch_A(golden_triples, config.entity_R, config.entity_D, config.entity_nn, config.relation_A)
+            nh_R, nh_D, nh_nn, nr_A, nt_R, nt_D, nt_nn = config.get_batch_A(negative_triples, config.entity_R, config.entity_D, config.entity_nn, config.relation_A)
 
-            p_scores, n_scores = dynamicKGE(epoch, golden_triples, negative_triples, ph_R, ph_D, pr_A, pt_R, pt_D, nh_R, nh_D, nr_A, nt_R, nt_D)
+            p_scores, n_scores = dynamicKGE(epoch, golden_triples, negative_triples, ph_R, ph_D, ph_nn, pr_A, pt_R, pt_D, pt_nn, nh_R, nh_D, nh_nn, nr_A, nt_R, nt_D, nt_nn)
             y = torch.Tensor([-1]).cuda()
             loss = criterion(p_scores, n_scores, y)
 
