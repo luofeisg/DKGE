@@ -178,6 +178,7 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
         for j in range(entity_nn[i]+1):
             uni, inv, count = torch.unique(entity_R[i][j][:entity_nn[i]+1], return_inverse=True, return_counts=True)
             entity_D[i][j][:entity_nn[i]+1] = 1.0/count[inv]
+        entity_D[i][:entity_nn[i]+1,:entity_nn[i]+1] = entity_D[i][:entity_nn[i]+1, :entity_nn[i]+1] - torch.eye(entity_nn[i]+1).cuda() * 0.5
     time3 = time.time()
     print("construct D matrix finished. Time elapsed:" + str(time3 - time2))
 
