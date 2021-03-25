@@ -171,10 +171,10 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
     print("start to construct D matrix")
     entity_D = torch.ones(entity_total, max_context_num + 1, max_context_num + 1).cuda()
     # entity_D = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
-    # for i in range(entity_R.shape[0]):
-    #     for j in range(entity_R.shape[1]):
-    #         uni, inv, count = torch.unique(entity_R[i][j], return_inverse=True, return_counts=True)
-    #         entity_D[i][j] = 1.0/count[inv]
+    for i in range(entity_R.shape[0]):
+        for j in range(entity_R.shape[1]):
+            uni, inv, count = torch.unique(entity_R[i][j], return_inverse=True, return_counts=True)
+            entity_D[i][j] = 1.0/count[inv]
     time3 = time.time()
     print("construct D matrix finished. Time elapsed:" + str(time3 - time2))
 

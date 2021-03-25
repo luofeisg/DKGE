@@ -118,7 +118,7 @@ class DynamicKGE(nn.Module):
             output_i = torch.mul(D_i.unsqueeze(-1).unsqueeze(-1), w)
             output_i = torch.matmul(H_i.unsqueeze(1), output_i).squeeze(-2).sum(1)
             output_i = F.relu(output_i)
-            output[i][:n+1] = output_i.detach()
+            output[i][:n+1] = output_i
 
         return output
 
