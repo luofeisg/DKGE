@@ -150,7 +150,9 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
             for index1, neighbour1 in enumerate(neighbours_list):
                 if (entity, neighbour1) in relation_table:
                     R[0][index1+1] = relation_table[(entity, neighbour1)][0]
+                    R[index1+1][0] = relation_table[(entity, neighbour1)][0] + relation_total
                 if (neighbour1, entity) in relation_table:
+                    R[0][index1+1] = relation_table[(neighbour1, entity)][0]
                     R[index1+1][0] = relation_table[(neighbour1, entity)][0] + relation_total
                 if neighbour1 not in entity_adj_table:
                     continue
@@ -160,7 +162,9 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
                     if neighbour2 in entity_adj_table[neighbour1]:
                         if (neighbour1, neighbour2) in relation_table:
                             R[index1+1, index2+1] = relation_table[(neighbour1, neighbour2)][0]
+                            R[index2+1, index1+1] = relation_table[(neighbour1, neighbour2)][0] + relation_total
                         if (neighbour2, neighbour1) in relation_table:
+                            R[index1+1, index2+1] = relation_table[(neighbour2, neighbour1)][0]
                             R[index2+1, index1+1] = relation_table[(neighbour2, neighbour1)][0] + relation_total
 
         entity_R[entity] = R
@@ -169,12 +173,11 @@ def construct_adj_table(train_list, entity_total, relation_total, max_context):
     time2 = time.time()
     print("construct R matrix finished. Time elapsed:" + str(time2 - time1))
     print("start to construct D matrix")
-    entity_D = torch.ones(entity_total, max_context_num + 1, max_context_num + 1).cuda()
-    # entity_D = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
+    entity_D = torch.Tensor(entity_total, max_context_num + 1, max_context_num + 1).cuda()
     for i in range(entity_R.shape[0]):
-        for j in range(entity_R.shape[1]):
-            uni, inv, count = torch.unique(entity_R[i][j], return_inverse=True, return_counts=True)
-            entity_D[i][j] = 1.0/count[inv]
+        for j in range(entity_nn[i]+1):
+            uni, inv, count = torch.unique(entity_R[i][j][:entity_nn[i]+1], return_inverse=True, return_counts=True)
+            entity_D[i][j][:entity_nn[i]+1] = 1.0/count[inv]
     time3 = time.time()
     print("construct D matrix finished. Time elapsed:" + str(time3 - time2))
 

@@ -115,7 +115,7 @@ class DynamicKGE(nn.Module):
             H_i = H[i][:n+1]
             relation_type = R_i[:n+1, :n+1].reshape(-1).long()    # relation_total*2 + 1: padding index
             w = torch.index_select(weight, 0, relation_type).view(n+1, n+1, config.dim, -1)
-            output_i = F.relu(torch.matmul(H_i.unsqueeze(1), torch.mul(D_i.unsqueeze(-1).unsqueeze(-1), w)).squeeze(-2).sum(1)).sum(0) / n
+            output_i = F.relu(torch.matmul(H_i.unsqueeze(1), torch.mul(D_i.unsqueeze(-1).unsqueeze(-1), w)).squeeze(-2).sum(1))
             output[i] = output_i
 
         return output
@@ -197,14 +197,14 @@ class DynamicKGE(nn.Module):
         pr_adj_relation_vec_list = self.gcn(pr_A, pr_adj_relation_vec_list, target='relation')
         nr_adj_relation_vec_list = self.gcn(nr_A, nr_adj_relation_vec_list, target='relation')
 
-        ph_sg = ph_adj_entity_vec_list
-        pt_sg = pt_adj_entity_vec_list
-        nh_sg = nh_adj_entity_vec_list
-        nt_sg = nt_adj_entity_vec_list
-        # ph_sg = self.calc_subgraph_vec(p_h, ph_adj_entity_vec_list, target='entity')
-        # pt_sg = self.calc_subgraph_vec(p_t, pt_adj_entity_vec_list, target='entity')
-        # nh_sg = self.calc_subgraph_vec(n_h, nh_adj_entity_vec_list, target='entity')
-        # nt_sg = self.calc_subgraph_vec(n_t, nt_adj_entity_vec_list, target='entity')
+        # ph_sg = ph_adj_entity_vec_list
+        # pt_sg = pt_adj_entity_vec_list
+        # nh_sg = nh_adj_entity_vec_list
+        # nt_sg = nt_adj_entity_vec_list
+        ph_sg = self.calc_subgraph_vec(p_h, ph_adj_entity_vec_list, target='entity')
+        pt_sg = self.calc_subgraph_vec(p_t, pt_adj_entity_vec_list, target='entity')
+        nh_sg = self.calc_subgraph_vec(n_h, nh_adj_entity_vec_list, target='entity')
+        nt_sg = self.calc_subgraph_vec(n_t, nt_adj_entity_vec_list, target='entity')
         pr_sg = self.calc_subgraph_vec(p_r, pr_adj_relation_vec_list, target='relation')
         nr_sg = self.calc_subgraph_vec(n_r, nr_adj_relation_vec_list, target='relation')
 
