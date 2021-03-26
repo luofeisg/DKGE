@@ -106,7 +106,7 @@ class DynamicKGE(nn.Module):
         return sg
 
     def rgcn(self, R, D, nn, H, target='entity'):
-        output = torch.Tensor(R.shape[0], config.max_context_num+1, config.dim).cuda()
+        output = torch.zeros(R.shape[0], config.max_context_num+1, config.dim).cuda()
         weight = torch.cat((self.entity_gcn_weight, torch.zeros(1, config.dim, config.dim).cuda()), dim=0)
         for i in range(R.shape[0]):
             n = nn[i] # number of neighbors
@@ -115,9 +115,20 @@ class DynamicKGE(nn.Module):
             H_i = H[i][:n+1]
             relation_type = R_i[:n+1, :n+1].reshape(-1).long()    # relation_total*2 + 1: padding index
             w = torch.index_select(weight, 0, relation_type).view(n+1, n+1, config.dim, -1)
-            for j in n+1:
-                output[i][j] = torch.matmul(H_i.unsqueeze(1), torch.mul(D_i[j,:].unsqueeze(-1).unsqueeze(-1), w[j,:])).squeeze(-2) + torch.matmul(H_i.unsqueeze(1), torch.mul(D_i[:,j].unsqueeze(-1).unsqueeze(-1), w[:,j])).squeeze(-2)
-                pass
+            output_i = torch.mul(D_i.unsqueeze(-1).unsqueeze(-1), w)
+            output_i = output_i + output_i.transpose(0, 1)
+            output_i = F.relu(torch.matmul(H_i.unsqueeze(1), output_i).squeeze(-2).sum(1))
+            output[i][:n+1] = output_i
+
+        # for i in range(R.shape[0]):
+        #     n = nn[i] # number of neighbors
+        #     R_i = R[i][:n+1, :n+1]
+        #     D_i = D[i][:n+1, :n+1]
+        #     H_i = H[i][:n+1]
+        #     relation_type = R_i[:n+1, :n+1].reshape(-1).long()    # relation_total*2 + 1: padding index
+        #     w = torch.index_select(weight, 0, relation_type).view(n+1, n+1, config.dim, -1)
+        #     for j in range(n+1):
+        #         output[i][j] = (torch.matmul(H_i.unsqueeze(1), torch.mul(D_i[j,:].unsqueeze(-1).unsqueeze(-1), w[j,:])).squeeze(-2) + torch.matmul(H_i.unsqueeze(1), torch.mul(D_i[:,j].unsqueeze(-1).unsqueeze(-1), w[:,j])).squeeze(-2)).sum(0)
             # output_i = F.relu(torch.matmul(H_i.unsqueeze(1), torch.mul(D_i.unsqueeze(-1).unsqueeze(-1), w)).squeeze(-2).sum(1))
             # output[i] = output_i
 
@@ -273,6 +284,7 @@ def main():
             epoch_avg_loss += (float(loss.item()) / config.nbatchs)
             torch.cuda.empty_cache()
             t2 = time.time()
+            # print(f'epoch: {epoch} ---batch: {batch} ---loss: {loss.item()} ---time for batch: {t2 - t1}')
             if batch == 0:
                 print("time for 1st batch: " + str(t2-t1))
         end_time = time.time()
