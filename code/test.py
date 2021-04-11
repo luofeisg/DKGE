@@ -105,5 +105,5 @@ if __name__ == "__main__":
 
     entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
     print('test link prediction starting...')
-    test_link_prediction(config.test_list, set(config.train_list), entity_emb, relation_emb, config.norm)
+    test_link_prediction(config.test_triples, set(config.train_triples), entity_emb, relation_emb, config.norm)
     print('test link prediction ending...')

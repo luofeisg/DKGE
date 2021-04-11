@@ -2,6 +2,7 @@ import random
 import torch
 import torch.nn as nn
 import numpy as np
+import math
 
 
 def read_file(file_name):
@@ -12,8 +13,12 @@ def read_file(file_name):
             li = line.split()
             if len(li) == 3:
                 data.append((int(li[0]), int(li[2]), int(li[1])))
-    return data
+    return np.array(data)
 
+def uniform(size, tensor):
+    bound = 1.0 / math.sqrt(size)
+    if tensor is not None:
+        tensor.data.uniform_(-bound, bound)
 
 def get_total(file_name):
     with open(file_name, 'r', encoding="utf-8") as f:
