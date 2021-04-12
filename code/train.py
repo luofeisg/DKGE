@@ -153,6 +153,14 @@ class DynamicKGE(nn.Module):
             self.pr_o[r] = pr_o[i].detach().cpu().numpy().tolist()
 
     def forward(self, entity, edge_index, edge_type, edge_norm):
+        entity_emb = self.entity_emb[entity.long()]
+        entity_context = self.entity_context[entity.long()]
+        # relation_emb = self.relation_emb[]
+
+        entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
+        entity_context = F.dropout(entity_context, training=self.training)
+        entity_context = self.conv2(entity_context, edge_index, edge_type, edge_norm)
+
 
         pass
 
@@ -356,7 +364,7 @@ def main():
     train_triples = config.train_triples
     valid_triples = config.valid_triples
     test.triples = config.test_triples
-    sample_size = 10000
+    sample_size = 1000
     negative_rate = 1
     num_rels = config.relation_total
 
