@@ -157,17 +157,20 @@ class DynamicKGE(nn.Module):
 
         return F.binary_cross_entropy_with_logits(score, target)
 
-    def forward(self, entity, edge_index, edge_type, edge_norm, samples):
-        # entity_emb = self.entity_emb[entity.long()]
+    def forward(self, entity, edge_index, edge_type, edge_norm, samples, DAD_rel):
         entity_context = self.entity_context[entity.long()]
-        # relation_emb = self.relation_emb[]
+        relation_context = self.relation_context[:]
 
         entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
         entity_context = F.dropout(entity_context, p=0.2, training=self.training)
         entity_context = F.relu(self.conv2(entity_context, edge_index, edge_type, edge_norm))
 
+        relation_context = torch.matmul(DAD_rel, relation_context)
+        relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
+
+
         head_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb[samples[:, 0]]) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 0]])
-        rel_o = self.relation_emb[samples[:, 1]]
+        rel_o = torch.mul(torch.sigmoid(self.gate_relation), self.relation_emb[samples[:, 1]]) + torch.mul(1 - torch.sigmoid(self.gate_relation), relation_context[samples[:, 1]])
         tail_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb[samples[:, 2]]) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 2]])
 
         # score for loss
@@ -376,7 +379,7 @@ def main():
     train_triples = config.train_triples
     valid_triples = config.valid_triples
     test.triples = config.test_triples
-    sample_size = 3000
+    sample_size = 4000
     negative_rate = 1
     num_rels = config.relation_total
 
@@ -413,6 +416,30 @@ def main():
         head, tail = np.reshape(idx, (2, -1))
         relabeled_edges = np.stack((head, rel, tail)).transpose()
 
+        relation_adj_table = dict()
+        relation_entity_table = dict()
+        A_rel = torch.eye(config.relation_total, config.relation_total).cuda()
+        D_rel = np.eye(config.relation_total, config.relation_total)
+        for i in range(relabeled_edges.shape[0]):
+            h, r, t = relabeled_edges[i]
+            relation_entity_table.setdefault(r, set()).add(h)
+            relation_entity_table.setdefault(r, set()).add(t)
+        for relation in range(config.relation_total):
+            if relation in relation_entity_table:
+                for index in range(relation+1 ,config.relation_total):
+                    if index != relation and index in relation_entity_table:
+                        if not relation_entity_table[relation].isdisjoint(relation_entity_table[index]):
+                            A_rel[relation, index] = 1
+                            A_rel[index, relation] = 1
+                            D_rel[relation, relation] += 1
+
+        D_rel = np.linalg.inv(D_rel)
+        D_rel = torch.Tensor(D_rel).cuda()
+        i = list(range(config.relation_total))
+        D_rel[i, i] = torch.sqrt(D_rel[i, i])
+
+        DAD_rel = D_rel.mm(A_rel).mm(D_rel)
+
         # Negative sampling
         samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), negative_rate)
 
@@ -436,10 +463,12 @@ def main():
         device = torch.device('cuda')
         train_data.to(device)
 
-        p_scores, n_scores = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.samples)
+        p_scores, n_scores = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.samples, DAD_rel)
 
         y = torch.Tensor([-1]*sample_size).cuda()
+        y1 = torch.Tensor([-1]).cuda()
         loss = criterion(p_scores, n_scores, y)
+        loss1 = criterion(p_scores, n_scores, y)
 
         loss.backward()
         optimizer.step()
