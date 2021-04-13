@@ -1,13 +1,14 @@
 import numpy as np
 from scipy import sparse
 import collections
+import torch
+import torch.nn as nn
 
-matrix = np.eye(6)
 
-sparse_matrix = sparse.csr_matrix(matrix)
+loss = nn.MarginRankingLoss()
+input1 = torch.randn(3, requires_grad=True)
+input2 = torch.randn(3, requires_grad=True)
+target = torch.randn(3).sign()
+output = loss(input1, input2, target)
 
-dd = collections.defaultdict()
-
-print("对角矩阵: \n{}".format(matrix))
-
-print("\nsparse存储的矩阵: \n{}".format(sparse_matrix))
+print()

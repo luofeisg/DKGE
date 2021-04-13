@@ -152,17 +152,29 @@ class DynamicKGE(nn.Module):
             r = str(int(pos_r[i]))
             self.pr_o[r] = pr_o[i].detach().cpu().numpy().tolist()
 
-    def forward(self, entity, edge_index, edge_type, edge_norm):
-        entity_emb = self.entity_emb[entity.long()]
+    def score_loss(self, embedding, triplets, target):
+        score = self.distmult(embedding, triplets)
+
+        return F.binary_cross_entropy_with_logits(score, target)
+
+    def forward(self, entity, edge_index, edge_type, edge_norm, samples):
+        # entity_emb = self.entity_emb[entity.long()]
         entity_context = self.entity_context[entity.long()]
         # relation_emb = self.relation_emb[]
 
         entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
-        entity_context = F.dropout(entity_context, training=self.training)
-        entity_context = self.conv2(entity_context, edge_index, edge_type, edge_norm)
+        entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        entity_context = F.relu(self.conv2(entity_context, edge_index, edge_type, edge_norm))
 
+        head_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb[samples[:, 0]]) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 0]])
+        rel_o = self.relation_emb[samples[:, 1]]
+        tail_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb[samples[:, 2]]) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 2]])
 
-        pass
+        # score for loss
+        p_score = self._calc(head_o[0:samples.size()[0]//2], tail_o[0:samples.size()[0]//2], rel_o[0:samples.size()[0]//2])
+        n_score = self._calc(head_o[samples.size()[0]//2:], tail_o[samples.size()[0]//2:], rel_o[samples.size()[0]//2:])
+
+        return p_score, n_score
 
     # def forward(self, epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A):
     #     # multi golden and multi negative
@@ -364,7 +376,7 @@ def main():
     train_triples = config.train_triples
     valid_triples = config.valid_triples
     test.triples = config.test_triples
-    sample_size = 1000
+    sample_size = 3000
     negative_rate = 1
     num_rels = config.relation_total
 
@@ -385,7 +397,7 @@ def main():
     else:
         optimizer = optim.SGD(model.parameters(), lr=config.learning_rate)
 
-    criterion = nn.MarginRankingLoss(config.margin, False).cuda()
+    criterion = nn.MarginRankingLoss(config.margin, reduction='sum').cuda()
 
     for epoch in range(config.train_times):
         start_time = time.time()
@@ -424,28 +436,39 @@ def main():
         device = torch.device('cuda')
         train_data.to(device)
 
-        entity_o, relation_o = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm)
+        p_scores, n_scores = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.samples)
 
-        epoch_avg_loss = 0.0
-        for batch in range(config.nbatchs):
-            optimizer.zero_grad()
-            golden_triples, negative_triples = config.get_batch(config.batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts)
-            ph_A, pr_A, pt_A = config.get_batch_A(golden_triples, config.entity_A, config.relation_A)
-            nh_A, nr_A, nt_A = config.get_batch_A(negative_triples, config.entity_A, config.relation_A)
+        y = torch.Tensor([-1]*sample_size).cuda()
+        loss = criterion(p_scores, n_scores, y)
 
-            p_scores, n_scores = model(epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A)
-            y = torch.Tensor([-1]).cuda()
-            loss = criterion(p_scores, n_scores, y)
+        loss.backward()
+        optimizer.step()
+        # torch.cuda.empty_cache()
 
-            loss.backward()
-            optimizer.step()
-
-            epoch_avg_loss += (float(loss.item()) / config.nbatchs)
-            torch.cuda.empty_cache()
         end_time = time.time()
-
-        print('----------epoch avg loss: ' + str(epoch_avg_loss) + ' ----------')
+        print('----------epoch loss: ' + str(loss.item()) + ' ----------')
         print('----------epoch training time: ' + str(end_time-start_time) + ' s --------\n')
+        pass
+        # epoch_avg_loss = 0.0
+        # for batch in range(config.nbatchs):
+        #     optimizer.zero_grad()
+        #     golden_triples, negative_triples = config.get_batch(config.batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts)
+        #     ph_A, pr_A, pt_A = config.get_batch_A(golden_triples, config.entity_A, config.relation_A)
+        #     nh_A, nr_A, nt_A = config.get_batch_A(negative_triples, config.entity_A, config.relation_A)
+        #
+        #     p_scores, n_scores = model(epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A)
+        #     y = torch.Tensor([-1]).cuda()
+        #     loss = criterion(p_scores, n_scores, y)
+        #
+        #     loss.backward()
+        #     optimizer.step()
+        #
+        #     epoch_avg_loss += (float(loss.item()) / config.nbatchs)
+        #     torch.cuda.empty_cache()
+        # end_time = time.time()
+        #
+        # print('----------epoch avg loss: ' + str(epoch_avg_loss) + ' ----------')
+        # print('----------epoch training time: ' + str(end_time-start_time) + ' s --------\n')
 
     print('train ending...')
 
