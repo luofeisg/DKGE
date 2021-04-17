@@ -21,11 +21,11 @@ class DynamicKGE(nn.Module):
     def __init__(self, config):
         super(DynamicKGE, self).__init__()
 
-        self.entity_emb = nn.Parameter(torch.Tensor(config.entity_total, config.dim))
-        self.relation_emb = nn.Parameter(torch.Tensor(config.relation_total, config.dim))
+        self.entity_emb = nn.Embedding(config.entity_total, config.dim)
+        self.relation_emb = nn.Embedding(config.relation_total, config.dim)
 
-        self.entity_context = nn.Parameter(torch.Tensor(config.entity_total, config.dim), )
-        self.relation_context = nn.Parameter(torch.Tensor(config.relation_total, config.dim))
+        self.entity_context = nn.Embedding(config.entity_total, config.dim)
+        self.relation_context = nn.Embedding(config.relation_total, config.dim)
         # self.entity_context = nn.Embedding(config.entity_total + 1, config.dim, padding_idx=config.entity_total)
         # self.relation_context = nn.Embedding(config.relation_total + 1, config.dim, padding_idx=config.relation_total)
 
@@ -47,10 +47,10 @@ class DynamicKGE(nn.Module):
         self._init_parameters()
 
     def _init_parameters(self):
-        nn.init.xavier_uniform_(self.entity_emb.data)
-        nn.init.xavier_uniform_(self.relation_emb.data)
-        nn.init.xavier_uniform_(self.entity_context.data)
-        nn.init.xavier_uniform_(self.relation_context.data)
+        # nn.init.xavier_uniform_(self.entity_emb.data)
+        # nn.init.xavier_uniform_(self.relation_emb.data)
+        # nn.init.xavier_uniform_(self.entity_context.data)
+        # nn.init.xavier_uniform_(self.relation_context.data)
         nn.init.uniform_(self.gate_entity.data)
         nn.init.uniform_(self.gate_relation.data)
         nn.init.uniform_(self.v_ent.data)
@@ -158,20 +158,21 @@ class DynamicKGE(nn.Module):
         return F.binary_cross_entropy_with_logits(score, target)
 
     def forward(self, entity, edge_index, edge_type, edge_norm, samples, DAD_rel):
-        entity_context = self.entity_context[entity.long()]
-        relation_context = self.relation_context[:]
+        entity_context = self.entity_context(entity.long())
+        relation_idx = torch.arange(config.relation_total).cuda()
+        relation_context = self.relation_context(relation_idx)
 
         entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
-        entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
         entity_context = F.relu(self.conv2(entity_context, edge_index, edge_type, edge_norm))
 
         relation_context = torch.matmul(DAD_rel, relation_context)
         relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
 
 
-        head_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb[samples[:, 0]]) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 0]])
-        rel_o = torch.mul(torch.sigmoid(self.gate_relation), self.relation_emb[samples[:, 1]]) + torch.mul(1 - torch.sigmoid(self.gate_relation), relation_context[samples[:, 1]])
-        tail_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb[samples[:, 2]]) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 2]])
+        head_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 0])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 0]])
+        rel_o = torch.mul(torch.sigmoid(self.gate_relation), self.relation_emb(samples[:, 1])) + torch.mul(1 - torch.sigmoid(self.gate_relation), relation_context[samples[:, 1]])
+        tail_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 2])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 2]])
 
         # score for loss
         p_score = self._calc(head_o[0:samples.size()[0]//2], tail_o[0:samples.size()[0]//2], rel_o[0:samples.size()[0]//2])
