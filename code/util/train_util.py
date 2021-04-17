@@ -13,7 +13,7 @@ def read_file(file_name):
             li = line.split()
             if len(li) == 3:
                 data.append((int(li[0]), int(li[2]), int(li[1])))
-    return np.array(data)
+    return data
 
 def uniform(size, tensor):
     bound = 1.0 / math.sqrt(size)

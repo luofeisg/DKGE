@@ -16,6 +16,7 @@ parser.add_argument('-o', '--optim', type=str, dest="optim", help="optimizer", r
 parser.add_argument('-p', '--path', type=str, dest="dataset", help="dataset path", required=False, default="YAGO-3SP/snapshot1")
 parser.add_argument('-t', '--test_mode', type=bool, dest="test_mode", help="if test mode on", required=False, default=False)
 parser.add_argument('-g', '--gpu', type=int, dest="gpu_id", help="select gpu", required=False, default=0)
+parser.add_argument('-s', '--sample_size', type=int, dest="sample_size", help="sample size", required=False, default=4000)
 args = parser.parse_args()
 
 os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
@@ -27,9 +28,13 @@ relation_total = get_total(file_name='./data/' + dataset_v1 + '/relation2id.txt'
 entity_set = set(range(entity_total))
 relation_set = set(range(relation_total))
 
-train_triples = read_file(file_name='./data/' + dataset_v1 + '/train2id.txt')
-valid_triples = read_file(file_name='./data/' + dataset_v1 + '/valid2id.txt')
-test_triples = read_file(file_name='./data/' + dataset_v1 + '/test2id.txt')
+train_list = read_file(file_name='./data/' + dataset_v1 + '/train2id.txt')
+valid_list = read_file(file_name='./data/' + dataset_v1 + '/valid2id.txt')
+test_list = read_file(file_name='./data/' + dataset_v1 + '/test2id.txt')
+
+train_triples = np.array(train_list)
+valid_triples = np.array(valid_list)
+test_triples = np.array(test_list)
 
 print('entity_total: ' + str(entity_total))
 print('relation_total: ' + str(relation_total))
@@ -47,8 +52,10 @@ dim = args.dimension
 norm = args.norm
 optimizer = args.optim
 test_mode = args.test_mode
+sample_size = args.sample_size
 bern = True
 res_dir = './data/' + dataset_v1 + '/parameters/'
+model_state_file = './data/' + dataset_v1 + '/parameters/model_state.pth'
 
 print('train_times: ' + str(train_times))
 print('learning_rate: ' + str(learning_rate))

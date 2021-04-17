@@ -174,11 +174,7 @@ class DynamicKGE(nn.Module):
         rel_o = torch.mul(torch.sigmoid(self.gate_relation), self.relation_emb(samples[:, 1])) + torch.mul(1 - torch.sigmoid(self.gate_relation), relation_context[samples[:, 1]])
         tail_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 2])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 2]])
 
-        # score for loss
-        p_score = self._calc(head_o[0:samples.size()[0]//2], tail_o[0:samples.size()[0]//2], rel_o[0:samples.size()[0]//2])
-        n_score = self._calc(head_o[samples.size()[0]//2:], tail_o[samples.size()[0]//2:], rel_o[samples.size()[0]//2:])
-
-        return p_score, n_score
+        return head_o, rel_o, tail_o
 
     # def forward(self, epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A):
     #     # multi golden and multi negative
@@ -380,9 +376,11 @@ def main():
     train_triples = config.train_triples
     valid_triples = config.valid_triples
     test.triples = config.test_triples
-    sample_size = 4000
+    sample_size = config.sample_size
     negative_rate = 1
     num_rels = config.relation_total
+    model_state_file = config.model_state_file
+
 
 
     print('train starting...')
@@ -413,11 +411,10 @@ def main():
         edges = np.random.choice(all_edges, sample_size, replace=False)
         edges = train_triples[edges]
         head, rel, tail = edges.transpose()
-        uniq_entity, idx = np.unique((head, tail), return_inverse=True)
-        head, tail = np.reshape(idx, (2, -1))
+        uniq_entity, entity_idx = np.unique((head, tail), return_inverse=True)
+        head, tail = np.reshape(entity_idx, (2, -1))
         relabeled_edges = np.stack((head, rel, tail)).transpose()
 
-        relation_adj_table = dict()
         relation_entity_table = dict()
         A_rel = torch.eye(config.relation_total, config.relation_total).cuda()
         D_rel = np.eye(config.relation_total, config.relation_total)
@@ -464,12 +461,14 @@ def main():
         device = torch.device('cuda')
         train_data.to(device)
 
-        p_scores, n_scores = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.samples, DAD_rel)
+        head_o, rel_o, tail_o = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.samples, DAD_rel)
+
+        # score for loss
+        p_scores = model._calc(head_o[0:train_data.samples.size()[0]//2], tail_o[0:train_data.samples.size()[0]//2], rel_o[0:train_data.samples.size()[0]//2])
+        n_scores = model._calc(head_o[train_data.samples.size()[0]//2:], tail_o[train_data.samples.size()[0]//2:], rel_o[train_data.samples.size()[0]//2:])
 
         y = torch.Tensor([-1]*sample_size).cuda()
-        y1 = torch.Tensor([-1]).cuda()
         loss = criterion(p_scores, n_scores, y)
-        loss1 = criterion(p_scores, n_scores, y)
 
         loss.backward()
         optimizer.step()
@@ -502,11 +501,25 @@ def main():
 
     print('train ending...')
 
-    model.save_parameters(config.res_dir)
+    torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, model_state_file)
 
-    entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
+    # model.save_parameters(config.res_dir)
+
     print('test link prediction starting...')
-    test.test_link_prediction(config.test_triples, set(config.train_triples), entity_emb, relation_emb, config.norm)
+    checkpoint = torch.load(model_state_file)
+    state_dict = checkpoint['state_dict']
+    entity_embedding = state_dict['entity_emb.weight']
+    entity_context = state_dict['entity_context.weight']
+    relation_embedding = state_dict['relation_emb.weight']
+    relation_context = state_dict['relation_context.weight']
+    gate_entity = state_dict['gate_entity']
+    gate_relation = state_dict['gate_relation']
+    entity_o = torch.mul(torch.sigmoid(gate_entity), entity_embedding) + torch.mul(1 - torch.sigmoid(gate_entity), entity_context)
+    relation_o = torch.mul(torch.sigmoid(gate_relation), relation_embedding) + torch.mul(1 - torch.sigmoid(gate_relation), relation_context)
+    # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
+
+
+    test.test_link_prediction(config.test_list, set(config.train_list), entity_o, relation_o, config.norm)
     print('test link prediction ending...')
 
 
