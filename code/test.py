@@ -103,7 +103,13 @@ if __name__ == "__main__":
     from config import config
     from util.parameter_util import load_o_emb
 
-    entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
+    # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
     print('test link prediction starting...')
-    test_link_prediction(config.test_triples, set(config.train_triples), entity_emb, relation_emb, config.norm)
+    checkpoint = torch.load(config.model_state_file)
+    state_dict = checkpoint['state_dict']
+    entity_o = state_dict['entity_o']
+    relation_o = state_dict['relation_o']
+    # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
+
+    test_link_prediction(config.test_list, set(config.train_list), entity_o, relation_o, config.norm)
     print('test link prediction ending...')

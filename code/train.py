@@ -41,8 +41,10 @@ class DynamicKGE(nn.Module):
         self.conv1 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
         self.conv2 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
 
-        self.pht_o = dict()
-        self.pr_o = dict()
+        self.entity_o = nn.Parameter(torch.rand(config.entity_total, config.dim), requires_grad=False)
+        self.relation_o = nn.Parameter(torch.rand(config.entity_total, config.dim), requires_grad=False)
+        # self.entity_o = torch.rand(config.entity_total, config.dim)
+        # self.relation_o = torch.rand(config.entity_total, config.dim)
 
         self._init_parameters()
 
@@ -173,6 +175,11 @@ class DynamicKGE(nn.Module):
         head_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 0])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 0]])
         rel_o = torch.mul(torch.sigmoid(self.gate_relation), self.relation_emb(samples[:, 1])) + torch.mul(1 - torch.sigmoid(self.gate_relation), relation_context[samples[:, 1]])
         tail_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 2])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 2]])
+
+        # save embeddings
+        self.entity_o[entity[samples[:config.sample_size, 0]].long()] = head_o[:config.sample_size]
+        self.entity_o[entity[samples[:config.sample_size, 2]].long()] = tail_o[:config.sample_size]
+        self.relation_o[samples[:config.sample_size, 1]] = rel_o[:config.sample_size]
 
         return head_o, rel_o, tail_o
 
@@ -411,8 +418,8 @@ def main():
         edges = np.random.choice(all_edges, sample_size, replace=False)
         edges = train_triples[edges]
         head, rel, tail = edges.transpose()
-        uniq_entity, entity_idx = np.unique((head, tail), return_inverse=True)
-        head, tail = np.reshape(entity_idx, (2, -1))
+        uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
+        head, tail = np.reshape(entity_idx_inv, (2, -1))
         relabeled_edges = np.stack((head, rel, tail)).transpose()
 
         relation_entity_table = dict()
@@ -508,14 +515,17 @@ def main():
     print('test link prediction starting...')
     checkpoint = torch.load(model_state_file)
     state_dict = checkpoint['state_dict']
-    entity_embedding = state_dict['entity_emb.weight']
-    entity_context = state_dict['entity_context.weight']
-    relation_embedding = state_dict['relation_emb.weight']
-    relation_context = state_dict['relation_context.weight']
-    gate_entity = state_dict['gate_entity']
-    gate_relation = state_dict['gate_relation']
-    entity_o = torch.mul(torch.sigmoid(gate_entity), entity_embedding) + torch.mul(1 - torch.sigmoid(gate_entity), entity_context)
-    relation_o = torch.mul(torch.sigmoid(gate_relation), relation_embedding) + torch.mul(1 - torch.sigmoid(gate_relation), relation_context)
+    entity_o = state_dict['entity_o']
+    relation_o = state_dict['relation_o']
+    # entity_embedding = state_dict['entity_emb.weight']
+    # entity_context = state_dict['entity_context.weight']
+    # relation_embedding = state_dict['relation_emb.weight']
+    # relation_context = state_dict['relation_context.weight']
+    # gate_entity = state_dict['gate_entity']
+    # gate_relation = state_dict['gate_relation']
+    # entity_o = torch.mul(torch.sigmoid(gate_entity), entity_embedding) + torch.mul(1 - torch.sigmoid(gate_entity), entity_context)
+    # relation_o = torch.mul(torch.sigmoid(gate_relation), relation_embedding) + torch.mul(1 - torch.sigmoid(gate_relation), relation_context)
+
     # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
 
 
