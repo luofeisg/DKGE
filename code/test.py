@@ -65,6 +65,13 @@ def test_link_prediction(test_list, train_set, entity_emb, relation_emb, norm):
     l_mr_filter = 0
     r_mr_filter = 0
 
+    l_hit1 = 0
+    r_hit1 = 0
+    l_hit3 = 0
+    r_hit3 = 0
+    l_hit10 = 0
+    r_hit10 = 0
+
     for i, golden_triple in enumerate(test_list):
         print('test ---' + str(i) + '--- triple')
         print(i, end="\r")
@@ -80,18 +87,39 @@ def test_link_prediction(test_list, train_set, entity_emb, relation_emb, norm):
         l_mr += l_pos
         r_mr += r_pos
 
+        if l_pos <= 10:
+            l_hit10 += 1
+            if l_pos <= 3:
+                l_hit3 += 1
+                if l_pos == 1:
+                    l_hit1 += 1
+
+        if r_pos <= 10:
+            r_hit10 += 1
+            if r_pos <= 3:
+                r_hit3 += 1
+                if r_pos == 1:
+                    r_hit1 += 1
+
         l_mr_filter += l_filter_pos
         r_mr_filter += r_filter_pos
 
     l_mr /= test_total
     r_mr /= test_total
 
+    l_hit1_ratio = float(l_hit1)/test_total
+    l_hit3_ratio = float(l_hit3)/test_total
+    l_hit10_ratio = float(l_hit10)/test_total
+    r_hit1_ratio = float(r_hit1)/test_total
+    r_hit3_ratio = float(r_hit3)/test_total
+    r_hit10_ratio = float(r_hit10)/test_total
+
     l_mr_filter /= test_total
     r_mr_filter /= test_total
 
-    print('\t\t\tmean_rank\t\t\t')
-    print('head(raw)\t\t\t%.3f\t\t\t' % l_mr)
-    print('tail(raw)\t\t\t%.3f\t\t\t' % r_mr)
+    print('\t\t\t\t\tmean_rank\t\t\thit@1,3,10')
+    print('head(raw)\t\t\t%.3f\t\t\t%.3f\t%.3f\t%.3f' % (l_mr, l_hit1_ratio, l_hit3_ratio, l_hit10_ratio))
+    print('tail(raw)\t\t\t%.3f\t\t\t%.3f\t%.3f\t%.3f' % (r_mr, r_hit1_ratio, r_hit3_ratio, r_hit10_ratio))
     print('average(raw)\t\t\t%.3f\t\t\t' % ((l_mr + r_mr) / 2))
 
     print('head(filter)\t\t\t%.3f\t\t\t' % l_mr_filter)
