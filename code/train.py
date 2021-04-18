@@ -523,6 +523,7 @@ def main():
     model.load_state_dict(checkpoint['state_dict'])
     state_dict = checkpoint['state_dict']
     model.eval()
+    torch.no_grad()
 
     head, rel, tail = test_triples.transpose()
     uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
@@ -569,6 +570,11 @@ def main():
     test_data.to(device)
 
     entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type, test_data.edge_norm, DAD_rel)
+    entity_embedding = model.entity_emb(torch.from_numpy(uniq_entity).long().cuda())
+    relation_idx = torch.arange(config.relation_total).cuda()
+    relation_embedding = model.relation_emb(relation_idx)
+    entity_o = torch.mul(torch.sigmoid(model.gate_entity), entity_embedding) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context)
+    relation_o = torch.mul(torch.sigmoid(model.gate_relation), relation_embedding) + torch.mul(1 - torch.sigmoid(model.gate_relation), relation_context)
 
     # entity_embedding = state_dict['entity_emb.weight']
     # entity_context = state_dict['entity_context.weight']
@@ -582,7 +588,7 @@ def main():
     # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
 
 
-    test.test_link_prediction(config.test_list, set(config.train_list), state_dict, config.norm)
+    test.test_link_prediction(relabeled_edges, entity_o, relation_o, config.norm, test_data)
     print('test link prediction ending...')
 
 

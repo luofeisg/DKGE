@@ -4,7 +4,7 @@ from util.test_util import *
 
 
 def _calc(h, t, r, norm):
-    return torch.norm(h + r - t, p=norm, dim=1).cpu().numpy().tolist()
+    return torch.norm(h + r - t, p=norm, dim=1).cpu().detach().numpy().tolist()
 
 
 def predict(batch, entity_emb, relation_emb, norm):
@@ -24,7 +24,7 @@ def predict(batch, entity_emb, relation_emb, norm):
     return p_score
 
 
-def test_head(golden_triple, train_set, entity_emb, relation_emb, norm):
+def test_head(golden_triple, entity_emb, relation_emb, norm):
     head_batch = get_head_batch(golden_triple, len(entity_emb))
     value = predict(head_batch, entity_emb, relation_emb, norm)
     golden_value = value[golden_triple[0]]
@@ -34,13 +34,13 @@ def test_head(golden_triple, train_set, entity_emb, relation_emb, norm):
     for pos, val in enumerate(value):
         if val < golden_value:
             res += 1
-            if (pos, golden_triple[1], golden_triple[2]) in train_set:
-                sub += 1
+            # if (pos, golden_triple[1], golden_triple[2]) in train_set:
+            #     sub += 1
+    return res
+    # return res, res - sub
 
-    return res, res - sub
 
-
-def test_tail(golden_triple, train_set, entity_emb, relation_emb, norm):
+def test_tail(golden_triple, entity_emb, relation_emb, norm):
     tail_batch = get_tail_batch(golden_triple, len(entity_emb))
     value = predict(tail_batch, entity_emb, relation_emb, norm)
     golden_value = value[golden_triple[2]]
@@ -50,21 +50,14 @@ def test_tail(golden_triple, train_set, entity_emb, relation_emb, norm):
     for pos, val in enumerate(value):
         if val < golden_value:
             res += 1
-            if (golden_triple[0], golden_triple[1], pos) in train_set:
-                sub += 1
+            # if (golden_triple[0], golden_triple[1], pos) in train_set:
+            #     sub += 1
 
-    return res, res - sub
+    return res
 
 
-def test_link_prediction(test_triples, state_dict, norm):
+def test_link_prediction(test_triples, entity_o, relation_o, norm, test_data):
     test_total = len(test_triples)
-
-    # entity_embedding = state_dict['entity_emb.weight']
-    # entity_context = state_dict['entity_context.weight']
-    # relation_embedding = state_dict['relation_emb.weight']
-    # relation_context = state_dict['relation_context.weight']
-    # gate_entity = state_dict['gate_entity']
-    # gate_relation = state_dict['gate_relation']
 
     l_mr = 0
     r_mr = 0
@@ -79,17 +72,18 @@ def test_link_prediction(test_triples, state_dict, norm):
     l_hit10 = 0
     r_hit10 = 0
 
-    for i, golden_triple in enumerate(test_list):
+    for i, golden_triple in enumerate(test_triples):
         print('test ---' + str(i) + '--- triple')
         print(i, end="\r")
-        l_pos, l_filter_pos = test_head(golden_triple, train_set, entity_emb, relation_emb, norm)
-        r_pos, r_filter_pos = test_tail(golden_triple, train_set, entity_emb, relation_emb, norm)  # position, 1-based
+        l_pos = test_head(golden_triple, entity_o, relation_o, norm)
+        r_pos = test_tail(golden_triple, entity_o, relation_o, norm)  # position, 1-based
 
         print(golden_triple, end=': ')
         print('l_pos=' + str(l_pos), end=', ')
-        print('l_filter_pos=' + str(l_filter_pos), end=', ')
+        # print('l_filter_pos=' + str(l_filter_pos), end=', ')
         print('r_pos=' + str(r_pos), end=', ')
-        print('r_filter_pos=' + str(r_filter_pos), end='\n')
+        print('\n')
+        # print('r_filter_pos=' + str(r_filter_pos), end='\n')
 
         l_mr += l_pos
         r_mr += r_pos
@@ -108,8 +102,8 @@ def test_link_prediction(test_triples, state_dict, norm):
                 if r_pos == 1:
                     r_hit1 += 1
 
-        l_mr_filter += l_filter_pos
-        r_mr_filter += r_filter_pos
+        # l_mr_filter += l_filter_pos
+        # r_mr_filter += r_filter_pos
 
     l_mr /= test_total
     r_mr /= test_total
