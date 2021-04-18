@@ -159,7 +159,7 @@ class DynamicKGE(nn.Module):
 
         return F.binary_cross_entropy_with_logits(score, target)
 
-    def forward(self, entity, edge_index, edge_type, edge_norm, samples, DAD_rel):
+    def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
         entity_context = self.entity_context(entity.long())
         relation_idx = torch.arange(config.relation_total).cuda()
         relation_context = self.relation_context(relation_idx)
@@ -171,17 +171,18 @@ class DynamicKGE(nn.Module):
         relation_context = torch.matmul(DAD_rel, relation_context)
         relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
 
+        return entity_context, relation_context
 
-        head_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 0])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 0]])
-        rel_o = torch.mul(torch.sigmoid(self.gate_relation), self.relation_emb(samples[:, 1])) + torch.mul(1 - torch.sigmoid(self.gate_relation), relation_context[samples[:, 1]])
-        tail_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 2])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 2]])
-
-        # save embeddings
-        self.entity_o[entity[samples[:config.sample_size, 0]].long()] = head_o[:config.sample_size]
-        self.entity_o[entity[samples[:config.sample_size, 2]].long()] = tail_o[:config.sample_size]
-        self.relation_o[samples[:config.sample_size, 1]] = rel_o[:config.sample_size]
-
-        return head_o, rel_o, tail_o
+        # head_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 0])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 0]])
+        # rel_o = torch.mul(torch.sigmoid(self.gate_relation), self.relation_emb(samples[:, 1])) + torch.mul(1 - torch.sigmoid(self.gate_relation), relation_context[samples[:, 1]])
+        # tail_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 2])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 2]])
+        #
+        # # save embeddings
+        # # self.entity_o[entity[samples[:config.sample_size, 0]].long()] = head_o[:config.sample_size]
+        # # self.entity_o[entity[samples[:config.sample_size, 2]].long()] = tail_o[:config.sample_size]
+        # # self.relation_o[samples[:config.sample_size, 1]] = rel_o[:config.sample_size]
+        #
+        # return head_o, rel_o, tail_o
 
     # def forward(self, epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A):
     #     # multi golden and multi negative
@@ -382,7 +383,7 @@ def main():
     # print('preparing data complete')
     train_triples = config.train_triples
     valid_triples = config.valid_triples
-    test.triples = config.test_triples
+    test_triples = config.test_triples
     sample_size = config.sample_size
     negative_rate = 1
     num_rels = config.relation_total
@@ -447,6 +448,7 @@ def main():
 
         # Negative sampling
         samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), negative_rate)
+        samples = torch.from_numpy(samples)
 
         head = torch.tensor(head, dtype=torch.long)
         tail = torch.tensor(tail, dtype=torch.long)
@@ -462,13 +464,17 @@ def main():
         train_data.entity = torch.from_numpy(uniq_entity)
         train_data.edge_type = edge_type
         train_data.edge_norm = edge_norm
-        train_data.samples = torch.from_numpy(samples)
+        train_data.samples = samples
         train_data.labels = labels
 
         device = torch.device('cuda')
         train_data.to(device)
 
-        head_o, rel_o, tail_o = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.samples, DAD_rel)
+        entity_context, relation_context = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, DAD_rel)
+
+        head_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.samples[:, 0])) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 0]])
+        rel_o = torch.mul(torch.sigmoid(model.gate_relation), model.relation_emb(train_data.samples[:, 1])) + torch.mul(1 - torch.sigmoid(model.gate_relation), relation_context[train_data.samples[:, 1]])
+        tail_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.samples[:, 2])) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 2]])
 
         # score for loss
         p_scores = model._calc(head_o[0:train_data.samples.size()[0]//2], tail_o[0:train_data.samples.size()[0]//2], rel_o[0:train_data.samples.size()[0]//2])
@@ -514,9 +520,56 @@ def main():
 
     print('test link prediction starting...')
     checkpoint = torch.load(model_state_file)
+    model.load_state_dict(checkpoint['state_dict'])
     state_dict = checkpoint['state_dict']
-    entity_o = state_dict['entity_o']
-    relation_o = state_dict['relation_o']
+    model.eval()
+
+    head, rel, tail = test_triples.transpose()
+    uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
+    head, tail = np.reshape(entity_idx_inv, (2, -1))
+    relabeled_edges = np.stack((head, rel, tail)).transpose()
+
+    relation_entity_table = dict()
+    A_rel = torch.eye(config.relation_total, config.relation_total).cuda()
+    D_rel = np.eye(config.relation_total, config.relation_total)
+    for i in range(relabeled_edges.shape[0]):
+        h, r, t = relabeled_edges[i]
+        relation_entity_table.setdefault(r, set()).add(h)
+        relation_entity_table.setdefault(r, set()).add(t)
+    for relation in range(config.relation_total):
+        if relation in relation_entity_table:
+            for index in range(relation + 1, config.relation_total):
+                if index != relation and index in relation_entity_table:
+                    if not relation_entity_table[relation].isdisjoint(relation_entity_table[index]):
+                        A_rel[relation, index] = 1
+                        A_rel[index, relation] = 1
+                        D_rel[relation, relation] += 1
+
+    D_rel = np.linalg.inv(D_rel)
+    D_rel = torch.Tensor(D_rel).cuda()
+    i = list(range(config.relation_total))
+    D_rel[i, i] = torch.sqrt(D_rel[i, i])
+
+    DAD_rel = D_rel.mm(A_rel).mm(D_rel)
+
+    head = torch.tensor(head, dtype=torch.long)
+    tail = torch.tensor(tail, dtype=torch.long)
+    rel = torch.tensor(rel, dtype=torch.long)
+    head, tail = torch.cat((head, tail)), torch.cat((tail, head))
+    rel = torch.cat((rel, rel + num_rels))
+
+    edge_index = torch.stack((head, tail))
+    edge_type = rel
+    edge_norm = edge_normalization(edge_type, edge_index, len(uniq_entity), num_rels)
+
+    test_data = Data(edge_index=edge_index)
+    test_data.entity = torch.from_numpy(uniq_entity)
+    test_data.edge_type = edge_type
+    test_data.edge_norm = edge_norm
+    test_data.to(device)
+
+    entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type, test_data.edge_norm, DAD_rel)
+
     # entity_embedding = state_dict['entity_emb.weight']
     # entity_context = state_dict['entity_context.weight']
     # relation_embedding = state_dict['relation_emb.weight']
@@ -529,7 +582,7 @@ def main():
     # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
 
 
-    test.test_link_prediction(config.test_list, set(config.train_list), entity_o, relation_o, config.norm)
+    test.test_link_prediction(config.test_list, set(config.train_list), state_dict, config.norm)
     print('test link prediction ending...')
 
 

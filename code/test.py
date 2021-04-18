@@ -56,8 +56,15 @@ def test_tail(golden_triple, train_set, entity_emb, relation_emb, norm):
     return res, res - sub
 
 
-def test_link_prediction(test_list, train_set, entity_emb, relation_emb, norm):
-    test_total = len(test_list)
+def test_link_prediction(test_triples, state_dict, norm):
+    test_total = len(test_triples)
+
+    # entity_embedding = state_dict['entity_emb.weight']
+    # entity_context = state_dict['entity_context.weight']
+    # relation_embedding = state_dict['relation_emb.weight']
+    # relation_context = state_dict['relation_context.weight']
+    # gate_entity = state_dict['gate_entity']
+    # gate_relation = state_dict['gate_relation']
 
     l_mr = 0
     r_mr = 0
@@ -135,9 +142,8 @@ if __name__ == "__main__":
     print('test link prediction starting...')
     checkpoint = torch.load(config.model_state_file)
     state_dict = checkpoint['state_dict']
-    entity_o = state_dict['entity_o']
-    relation_o = state_dict['relation_o']
+
     # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
 
-    test_link_prediction(config.test_list, set(config.train_list), entity_o, relation_o, config.norm)
+    test_link_prediction(config.test_triples, state_dict, config.norm)
     print('test link prediction ending...')
