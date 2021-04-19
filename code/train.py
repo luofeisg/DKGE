@@ -472,9 +472,9 @@ def main():
 
         entity_context, relation_context = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, DAD_rel)
 
-        head_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.samples[:, 0])) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 0]])
+        head_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.entity[train_data.samples[:, 0]].long())) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 0]])
         rel_o = torch.mul(torch.sigmoid(model.gate_relation), model.relation_emb(train_data.samples[:, 1])) + torch.mul(1 - torch.sigmoid(model.gate_relation), relation_context[train_data.samples[:, 1]])
-        tail_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.samples[:, 2])) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 2]])
+        tail_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.entity[train_data.samples[:, 2]].long())) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 2]])
 
         # score for loss
         p_scores = model._calc(head_o[0:train_data.samples.size()[0]//2], tail_o[0:train_data.samples.size()[0]//2], rel_o[0:train_data.samples.size()[0]//2])
