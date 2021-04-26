@@ -43,23 +43,14 @@ class DynamicKGE(nn.Module):
 
         self.entity_o = nn.Parameter(torch.rand(config.entity_total, config.dim), requires_grad=False)
         self.relation_o = nn.Parameter(torch.rand(config.entity_total, config.dim), requires_grad=False)
-        # self.entity_o = torch.rand(config.entity_total, config.dim)
-        # self.relation_o = torch.rand(config.entity_total, config.dim)
 
         self._init_parameters()
 
     def _init_parameters(self):
-        # nn.init.xavier_uniform_(self.entity_emb.data)
-        # nn.init.xavier_uniform_(self.relation_emb.data)
-        # nn.init.xavier_uniform_(self.entity_context.data)
-        # nn.init.xavier_uniform_(self.relation_context.data)
         nn.init.uniform_(self.gate_entity.data)
         nn.init.uniform_(self.gate_relation.data)
         nn.init.uniform_(self.v_ent.data)
         nn.init.uniform_(self.v_rel.data)
-
-        # stdv = 1. / math.sqrt(self.entity_gcn_weight.size(1))
-        # self.entity_gcn_weight.data.uniform_(-stdv, stdv)
 
         stdv = 1. / math.sqrt(self.relation_gcn_weight.size(1))
         self.relation_gcn_weight.data.uniform_(-stdv, stdv)
@@ -172,81 +163,6 @@ class DynamicKGE(nn.Module):
         relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
 
         return entity_context, relation_context
-
-        # head_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 0])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 0]])
-        # rel_o = torch.mul(torch.sigmoid(self.gate_relation), self.relation_emb(samples[:, 1])) + torch.mul(1 - torch.sigmoid(self.gate_relation), relation_context[samples[:, 1]])
-        # tail_o = torch.mul(torch.sigmoid(self.gate_entity), self.entity_emb(samples[:, 2])) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context[samples[:, 2]])
-        #
-        # # save embeddings
-        # # self.entity_o[entity[samples[:config.sample_size, 0]].long()] = head_o[:config.sample_size]
-        # # self.entity_o[entity[samples[:config.sample_size, 2]].long()] = tail_o[:config.sample_size]
-        # # self.relation_o[samples[:config.sample_size, 1]] = rel_o[:config.sample_size]
-        #
-        # return head_o, rel_o, tail_o
-
-    # def forward(self, epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A):
-    #     # multi golden and multi negative
-    #     pos_h, pos_r, pos_t = golden_triples
-    #     neg_h, neg_r, neg_t = negative_triples
-    #
-    #     p_h = self.entity_emb[pos_h.cpu().numpy()]
-    #     p_t = self.entity_emb[pos_t.cpu().numpy()]
-    #     p_r = self.relation_emb[pos_r.cpu().numpy()]
-    #     n_h = self.entity_emb[neg_h.cpu().numpy()]
-    #     n_t = self.entity_emb[neg_t.cpu().numpy()]
-    #     n_r = self.relation_emb[neg_r.cpu().numpy()]
-    #
-    #     ph_adj_entity_list = self.get_entity_context(pos_h)
-    #     pt_adj_entity_list = self.get_entity_context(pos_t)
-    #     nh_adj_entity_list = self.get_entity_context(neg_h)
-    #     nt_adj_entity_list = self.get_entity_context(neg_t)
-    #     pr_adj_relation_list = self.get_relation_context(pos_r)
-    #     nr_adj_relation_list = self.get_relation_context(neg_r)
-    #
-    #     ph_adj_entity_vec_list = self.get_adj_entity_vec(p_h, ph_adj_entity_list)
-    #     pt_adj_entity_vec_list = self.get_adj_entity_vec(p_t, pt_adj_entity_list)
-    #     nh_adj_entity_vec_list = self.get_adj_entity_vec(n_h, nh_adj_entity_list)
-    #     nt_adj_entity_vec_list = self.get_adj_entity_vec(n_t, nt_adj_entity_list)
-    #     pr_adj_relation_vec_list = self.get_adj_relation_vec(p_r, pr_adj_relation_list)
-    #     nr_adj_relation_vec_list = self.get_adj_relation_vec(n_r, nr_adj_relation_list)
-    #
-    #     # gcn
-    #     ph_adj_entity_vec_list = self.gcn(ph_A, ph_adj_entity_vec_list, target='entity')
-    #     pt_adj_entity_vec_list = self.gcn(pt_A, pt_adj_entity_vec_list, target='entity')
-    #     nh_adj_entity_vec_list = self.gcn(nh_A, nh_adj_entity_vec_list, target='entity')
-    #     nt_adj_entity_vec_list = self.gcn(nt_A, nt_adj_entity_vec_list, target='entity')
-    #     pr_adj_relation_vec_list = self.gcn(pr_A, pr_adj_relation_vec_list, target='relation')
-    #     nr_adj_relation_vec_list = self.gcn(nr_A, nr_adj_relation_vec_list, target='relation')
-    #
-    #     # ph_sg = ph_adj_entity_vec_list.mean(dim=1)
-    #     # pt_sg = pt_adj_entity_vec_list.mean(dim=1)
-    #     # nh_sg = nh_adj_entity_vec_list.mean(dim=1)
-    #     # nt_sg = nt_adj_entity_vec_list.mean(dim=1)
-    #     # pr_sg = pr_adj_relation_vec_list.mean(dim=1)
-    #     # nr_sg = nr_adj_relation_vec_list.mean(dim=1)
-    #
-    #     ph_sg = self.calc_subgraph_vec(p_h, ph_adj_entity_vec_list, target='entity')
-    #     pt_sg = self.calc_subgraph_vec(p_t, pt_adj_entity_vec_list, target='entity')
-    #     nh_sg = self.calc_subgraph_vec(n_h, nh_adj_entity_vec_list, target='entity')
-    #     nt_sg = self.calc_subgraph_vec(n_t, nt_adj_entity_vec_list, target='entity')
-    #     pr_sg = self.calc_subgraph_vec(p_r, pr_adj_relation_vec_list, target='relation')
-    #     nr_sg = self.calc_subgraph_vec(n_r, nr_adj_relation_vec_list, target='relation')
-    #
-    #     ph_o = torch.mul(F.sigmoid(self.gate_entity), p_h) + torch.mul(1 - F.sigmoid(self.gate_entity), ph_sg)
-    #     pt_o = torch.mul(F.sigmoid(self.gate_entity), p_t) + torch.mul(1 - F.sigmoid(self.gate_entity), pt_sg)
-    #     nh_o = torch.mul(F.sigmoid(self.gate_entity), n_h) + torch.mul(1 - F.sigmoid(self.gate_entity), nh_sg)
-    #     nt_o = torch.mul(F.sigmoid(self.gate_entity), n_t) + torch.mul(1 - F.sigmoid(self.gate_entity), nt_sg)
-    #     pr_o = torch.mul(F.sigmoid(self.gate_relation), p_r) + torch.mul(1 - F.sigmoid(self.gate_relation), pr_sg)
-    #     nr_o = torch.mul(F.sigmoid(self.gate_relation), n_r) + torch.mul(1 - F.sigmoid(self.gate_relation), nr_sg)
-    #
-    #     # score for loss
-    #     p_score = self._calc(ph_o, pt_o, pr_o)
-    #     n_score = self._calc(nh_o, nt_o, nr_o)
-    #
-    #     if epoch == config.train_times-1:
-    #         self.save_phrt_o(pos_h, pos_r, pos_t, ph_o, pr_o, pt_o)
-    #
-    #     return p_score, n_score
 
 class RGCNConv(MessagePassing):
     r"""The relational graph convolutional operator from the `"Modeling
@@ -377,10 +293,61 @@ def edge_normalization(edge_type, edge_index, num_entity, num_relation):
 
     return edge_norm
 
+def generate_graph(triples):
+    head, rel, tail = triples.transpose()
+    uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
+    head, tail = np.reshape(entity_idx_inv, (2, -1))
+    relabeled_edges = np.stack((head, rel, tail)).transpose()
+
+    relation_entity_table = dict()
+    A_rel = torch.eye(config.relation_total, config.relation_total).cuda()
+    D_rel = np.eye(config.relation_total, config.relation_total)
+    for i in range(relabeled_edges.shape[0]):
+        h, r, t = relabeled_edges[i]
+        relation_entity_table.setdefault(r, set()).add(h)
+        relation_entity_table.setdefault(r, set()).add(t)
+    for relation in range(config.relation_total):
+        if relation in relation_entity_table:
+            for index in range(relation + 1, config.relation_total):
+                if index != relation and index in relation_entity_table:
+                    if not relation_entity_table[relation].isdisjoint(relation_entity_table[index]):
+                        A_rel[relation, index] = 1
+                        A_rel[index, relation] = 1
+                        D_rel[relation, relation] += 1
+
+    D_rel = np.linalg.inv(D_rel)
+    D_rel = torch.Tensor(D_rel).cuda()
+    i = list(range(config.relation_total))
+    D_rel[i, i] = torch.sqrt(D_rel[i, i])
+
+    DAD_rel = D_rel.mm(A_rel).mm(D_rel)
+
+    # Negative sampling
+    samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), negative_rate=1)
+    samples = torch.from_numpy(samples)
+
+    head = torch.tensor(head, dtype=torch.long)
+    tail = torch.tensor(tail, dtype=torch.long)
+    rel = torch.tensor(rel, dtype=torch.long)
+    head, tail = torch.cat((head, tail)), torch.cat((tail, head))
+    rel = torch.cat((rel, rel + config.relation_total))
+
+    edge_index = torch.stack((head, tail))
+    edge_type = rel
+    edge_norm = edge_normalization(edge_type, edge_index, len(uniq_entity), config.relation_total)
+
+    data = Data(edge_index=edge_index)
+    data.entity = torch.from_numpy(uniq_entity)
+    data.edge_type = edge_type
+    data.edge_norm = edge_norm
+    data.samples = samples
+    data.labels = labels
+    data.DAD_rel = DAD_rel
+    data.uniq_entity = uniq_entity
+    data.relabeled_edges = relabeled_edges
+    return data
+
 def main():
-    # print('preparing data...')
-    # phs, prs, pts, nhs, nrs, nts = config.prepare_data()
-    # print('preparing data complete')
     train_triples = config.train_triples
     valid_triples = config.valid_triples
     test_triples = config.test_triples
@@ -415,62 +382,16 @@ def main():
         model.train()
         optimizer.zero_grad()
 
+        # sample from whole graph
         all_edges = np.arange(len(train_triples))
-        edges = np.random.choice(all_edges, sample_size, replace=False)
-        edges = train_triples[edges]
-        head, rel, tail = edges.transpose()
-        uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
-        head, tail = np.reshape(entity_idx_inv, (2, -1))
-        relabeled_edges = np.stack((head, rel, tail)).transpose()
-
-        relation_entity_table = dict()
-        A_rel = torch.eye(config.relation_total, config.relation_total).cuda()
-        D_rel = np.eye(config.relation_total, config.relation_total)
-        for i in range(relabeled_edges.shape[0]):
-            h, r, t = relabeled_edges[i]
-            relation_entity_table.setdefault(r, set()).add(h)
-            relation_entity_table.setdefault(r, set()).add(t)
-        for relation in range(config.relation_total):
-            if relation in relation_entity_table:
-                for index in range(relation+1 ,config.relation_total):
-                    if index != relation and index in relation_entity_table:
-                        if not relation_entity_table[relation].isdisjoint(relation_entity_table[index]):
-                            A_rel[relation, index] = 1
-                            A_rel[index, relation] = 1
-                            D_rel[relation, relation] += 1
-
-        D_rel = np.linalg.inv(D_rel)
-        D_rel = torch.Tensor(D_rel).cuda()
-        i = list(range(config.relation_total))
-        D_rel[i, i] = torch.sqrt(D_rel[i, i])
-
-        DAD_rel = D_rel.mm(A_rel).mm(D_rel)
-
-        # Negative sampling
-        samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), negative_rate)
-        samples = torch.from_numpy(samples)
-
-        head = torch.tensor(head, dtype=torch.long)
-        tail = torch.tensor(tail, dtype=torch.long)
-        rel = torch.tensor(rel, dtype=torch.long)
-        head, tail = torch.cat((head, tail)), torch.cat((tail, head))
-        rel = torch.cat((rel, rel + num_rels))
-
-        edge_index = torch.stack((head, tail))
-        edge_type = rel
-        edge_norm = edge_normalization(edge_type, edge_index, len(uniq_entity), num_rels)
-
-        train_data = Data(edge_index=edge_index)
-        train_data.entity = torch.from_numpy(uniq_entity)
-        train_data.edge_type = edge_type
-        train_data.edge_norm = edge_norm
-        train_data.samples = samples
-        train_data.labels = labels
+        sample_index = np.random.choice(all_edges, sample_size, replace=False)
+        sample_edges = train_triples[sample_index]
+        train_data = generate_graph(sample_edges)
 
         device = torch.device('cuda')
         train_data.to(device)
 
-        entity_context, relation_context = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, DAD_rel)
+        entity_context, relation_context = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
 
         head_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.entity[train_data.samples[:, 0]].long())) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 0]])
         rel_o = torch.mul(torch.sigmoid(model.gate_relation), model.relation_emb(train_data.samples[:, 1])) + torch.mul(1 - torch.sigmoid(model.gate_relation), relation_context[train_data.samples[:, 1]])
@@ -485,111 +406,35 @@ def main():
 
         loss.backward()
         optimizer.step()
-        # torch.cuda.empty_cache()
+        torch.cuda.empty_cache()
 
         end_time = time.time()
         print('----------epoch loss: ' + str(loss.item()) + ' ----------')
         print('----------epoch training time: ' + str(end_time-start_time) + ' s --------\n')
-        pass
-        # epoch_avg_loss = 0.0
-        # for batch in range(config.nbatchs):
-        #     optimizer.zero_grad()
-        #     golden_triples, negative_triples = config.get_batch(config.batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts)
-        #     ph_A, pr_A, pt_A = config.get_batch_A(golden_triples, config.entity_A, config.relation_A)
-        #     nh_A, nr_A, nt_A = config.get_batch_A(negative_triples, config.entity_A, config.relation_A)
-        #
-        #     p_scores, n_scores = model(epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A)
-        #     y = torch.Tensor([-1]).cuda()
-        #     loss = criterion(p_scores, n_scores, y)
-        #
-        #     loss.backward()
-        #     optimizer.step()
-        #
-        #     epoch_avg_loss += (float(loss.item()) / config.nbatchs)
-        #     torch.cuda.empty_cache()
-        # end_time = time.time()
-        #
-        # print('----------epoch avg loss: ' + str(epoch_avg_loss) + ' ----------')
-        # print('----------epoch training time: ' + str(end_time-start_time) + ' s --------\n')
 
     print('train ending...')
 
     torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, model_state_file)
 
-    # model.save_parameters(config.res_dir)
-
     print('test link prediction starting...')
     checkpoint = torch.load(model_state_file)
     model.load_state_dict(checkpoint['state_dict'])
-    state_dict = checkpoint['state_dict']
     model.eval()
     torch.no_grad()
 
-    head, rel, tail = test_triples.transpose()
-    uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
-    head, tail = np.reshape(entity_idx_inv, (2, -1))
-    relabeled_edges = np.stack((head, rel, tail)).transpose()
-
-    relation_entity_table = dict()
-    A_rel = torch.eye(config.relation_total, config.relation_total).cuda()
-    D_rel = np.eye(config.relation_total, config.relation_total)
-    for i in range(relabeled_edges.shape[0]):
-        h, r, t = relabeled_edges[i]
-        relation_entity_table.setdefault(r, set()).add(h)
-        relation_entity_table.setdefault(r, set()).add(t)
-    for relation in range(config.relation_total):
-        if relation in relation_entity_table:
-            for index in range(relation + 1, config.relation_total):
-                if index != relation and index in relation_entity_table:
-                    if not relation_entity_table[relation].isdisjoint(relation_entity_table[index]):
-                        A_rel[relation, index] = 1
-                        A_rel[index, relation] = 1
-                        D_rel[relation, relation] += 1
-
-    D_rel = np.linalg.inv(D_rel)
-    D_rel = torch.Tensor(D_rel).cuda()
-    i = list(range(config.relation_total))
-    D_rel[i, i] = torch.sqrt(D_rel[i, i])
-
-    DAD_rel = D_rel.mm(A_rel).mm(D_rel)
-
-    head = torch.tensor(head, dtype=torch.long)
-    tail = torch.tensor(tail, dtype=torch.long)
-    rel = torch.tensor(rel, dtype=torch.long)
-    head, tail = torch.cat((head, tail)), torch.cat((tail, head))
-    rel = torch.cat((rel, rel + num_rels))
-
-    edge_index = torch.stack((head, tail))
-    edge_type = rel
-    edge_norm = edge_normalization(edge_type, edge_index, len(uniq_entity), num_rels)
-
-    test_data = Data(edge_index=edge_index)
-    test_data.entity = torch.from_numpy(uniq_entity)
-    test_data.edge_type = edge_type
-    test_data.edge_norm = edge_norm
+    test_data = generate_graph(test_triples)
     test_data.to(device)
 
-    entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type, test_data.edge_norm, DAD_rel)
-    entity_embedding = model.entity_emb(torch.from_numpy(uniq_entity).long().cuda())
+    entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type, test_data.edge_norm, test_data.DAD_rel)
+    entity_embedding = model.entity_emb(torch.from_numpy(test_data.uniq_entity).long().cuda())
     relation_idx = torch.arange(config.relation_total).cuda()
     relation_embedding = model.relation_emb(relation_idx)
     entity_o = torch.mul(torch.sigmoid(model.gate_entity), entity_embedding) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context)
     relation_o = torch.mul(torch.sigmoid(model.gate_relation), relation_embedding) + torch.mul(1 - torch.sigmoid(model.gate_relation), relation_context)
-
-    # entity_embedding = state_dict['entity_emb.weight']
-    # entity_context = state_dict['entity_context.weight']
-    # relation_embedding = state_dict['relation_emb.weight']
-    # relation_context = state_dict['relation_context.weight']
-    # gate_entity = state_dict['gate_entity']
-    # gate_relation = state_dict['gate_relation']
-    # entity_o = torch.mul(torch.sigmoid(gate_entity), entity_embedding) + torch.mul(1 - torch.sigmoid(gate_entity), entity_context)
-    # relation_o = torch.mul(torch.sigmoid(gate_relation), relation_embedding) + torch.mul(1 - torch.sigmoid(gate_relation), relation_context)
-
     # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
 
-
-    test.test_link_prediction(relabeled_edges, entity_o, relation_o, config.norm, test_data)
-    print('test link prediction ending...')
-
+    print('test link prediction starts...')
+    test.test_link_prediction(test_data.relabeled_edges, entity_o, relation_o, config.norm, test_data)
+    print('test link prediction ends...')
 
 main()
