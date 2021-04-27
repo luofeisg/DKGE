@@ -44,8 +44,8 @@ def load_o_emb(res_path, entity_total, relation_total, dim, input=False):
 def load_parameters(parameter_path):
     with open(os.path.join(parameter_path, "all_parameters"), 'r') as f:
         emb = json.loads(f.read())
-        entity_emb = emb.get("entity_emb", emb['entity_emb.weight'])
-        relation_emb = emb.get('relation_emb', emb['relation_emb.weight'])
+        entity_emb = emb.get("entity_emb")
+        relation_emb = emb.get('relation_emb')
         entity_context = emb['entity_context.weight']
         relation_context = emb['relation_context.weight']
         entity_gcn_weight = emb['entity_gcn_weight']

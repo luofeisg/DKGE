@@ -209,6 +209,8 @@ class DynamicKGE(nn.Module):
 
 
 def main():
+    test_triples = config.test_triples
+
     print('preparing data...')
     phs, prs, pts, nhs, nrs, nts = config.prepare_data()
     print('preparing data complete')

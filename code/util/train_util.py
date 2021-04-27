@@ -282,3 +282,5 @@ def get_batch(batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts):
 def get_batch_A(triples, entity_A, relation_A):
     h, r, t = triples
     return entity_A[h.cpu().numpy()], relation_A[r.cpu().numpy()], entity_A[t.cpu().numpy()]
+
+
