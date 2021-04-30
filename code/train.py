@@ -4,18 +4,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch_geometric.nn.conv import MessagePassing
-from torch_scatter import scatter_add
-from torch_geometric.data import Data
 
 import test
 from config import config
 from util.parameter_util import *
 from util.train_util import *
 
-
 # gpu_ids = [0, 1]
-
 
 class DynamicKGE(nn.Module):
     def __init__(self, config):
@@ -40,9 +35,6 @@ class DynamicKGE(nn.Module):
 
         self.conv1 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
         self.conv2 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
-
-        self.entity_o = nn.Parameter(torch.rand(config.entity_total, config.dim), requires_grad=False)
-        self.relation_o = nn.Parameter(torch.rand(config.entity_total, config.dim), requires_grad=False)
 
         self._init_parameters()
 
@@ -164,189 +156,6 @@ class DynamicKGE(nn.Module):
 
         return entity_context, relation_context
 
-class RGCNConv(MessagePassing):
-    r"""The relational graph convolutional operator from the `"Modeling
-    Relational Data with Graph Convolutional Networks"
-    <https://arxiv.org/abs/1703.06103>`_ paper
-
-    .. math::
-        \mathbf{x}^{\prime}_i = \mathbf{\Theta}_{\textrm{root}} \cdot
-        \mathbf{x}_i + \sum_{r \in \mathcal{R}} \sum_{j \in \mathcal{N}_r(i)}
-        \frac{1}{|\mathcal{N}_r(i)|} \mathbf{\Theta}_r \cdot \mathbf{x}_j,
-
-    where :math:`\mathcal{R}` denotes the set of relations, *i.e.* edge types.
-    Edge type needs to be a one-dimensional :obj:`torch.long` tensor which
-    stores a relation identifier
-    :math:`\in \{ 0, \ldots, |\mathcal{R}| - 1\}` for each edge.
-
-    Args:
-        in_channels (int): Size of each input sample.
-        out_channels (int): Size of each output sample.
-        num_relations (int): Number of relations.
-        num_bases (int): Number of bases used for basis-decomposition.
-        root_weight (bool, optional): If set to :obj:`False`, the layer will
-            not add transformed root node features to the output.
-            (default: :obj:`True`)
-        bias (bool, optional): If set to :obj:`False`, the layer will not learn
-            an additive bias. (default: :obj:`True`)
-        **kwargs (optional): Additional arguments of
-            :class:`torch_geometric.nn.conv.MessagePassing`.
-    """
-
-    def __init__(self, in_channels, out_channels, num_relations, num_bases,
-                 root_weight=True, bias=True, **kwargs):
-        super(RGCNConv, self).__init__(aggr='mean', **kwargs)
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.num_relations = num_relations
-        self.num_bases = num_bases
-
-        self.basis = nn.Parameter(torch.Tensor(num_bases, in_channels, out_channels))
-        self.att = nn.Parameter(torch.Tensor(num_relations, num_bases))
-
-        if root_weight:
-            self.root = nn.Parameter(torch.Tensor(in_channels, out_channels))
-        else:
-            self.register_parameter('root', None)
-
-        if bias:
-            self.bias = nn.Parameter(torch.Tensor(out_channels))
-        else:
-            self.register_parameter('bias', None)
-
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        size = self.num_bases * self.in_channels
-        uniform(size, self.basis)
-        uniform(size, self.att)
-        uniform(size, self.root)
-        uniform(size, self.bias)
-
-    def forward(self, x, edge_index, edge_type, edge_norm=None, size=None):
-        """"""
-        return self.propagate(edge_index, size=size, x=x, edge_type=edge_type,
-                              edge_norm=edge_norm)
-
-
-    def message(self, x_j, edge_index_j, edge_type, edge_norm):
-        w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
-
-        # If no node features are given, we implement a simple embedding
-        # loopkup based on the target node index and its edge type.
-        if x_j is None:
-            w = w.view(-1, self.out_channels)
-            index = edge_type * self.in_channels + edge_index_j
-            out = torch.index_select(w, 0, index)
-        else:
-            w = w.view(self.num_relations, self.in_channels, self.out_channels)
-            w = torch.index_select(w, 0, edge_type)
-            out = torch.bmm(x_j.unsqueeze(1), w).squeeze(-2)
-
-        return out if edge_norm is None else out * edge_norm.view(-1, 1)
-
-    def update(self, aggr_out, x):
-        if self.root is not None:
-            if x is None:
-                out = aggr_out + self.root
-            else:
-                out = aggr_out + torch.matmul(x, self.root)
-
-        if self.bias is not None:
-            out = out + self.bias
-        return out
-
-    def __repr__(self):
-        return '{}({}, {}, num_relations={})'.format(
-            self.__class__.__name__, self.in_channels, self.out_channels,
-            self.num_relations)
-
-def negative_sampling(pos_samples, num_entity, negative_rate):
-    size_of_batch = len(pos_samples)
-    num_to_generate = size_of_batch * negative_rate
-    neg_samples = np.tile(pos_samples, (negative_rate, 1))
-    labels = np.zeros(size_of_batch * (negative_rate + 1), dtype=np.float32)
-    labels[: size_of_batch] = 1
-    values = np.random.choice(num_entity, size=num_to_generate)
-    choices = np.random.uniform(size=num_to_generate)
-    subj = choices > 0.5
-    obj = choices <= 0.5
-    neg_samples[subj, 0] = values[subj]
-    neg_samples[obj, 2] = values[obj]
-
-    return np.concatenate((pos_samples, neg_samples)), labels
-
-def edge_normalization(edge_type, edge_index, num_entity, num_relation):
-    '''
-        Edge normalization trick
-        - one_hot: (num_edge, num_relation)
-        - deg: (num_node, num_relation)
-        - index: (num_edge)
-        - deg[edge_index[0]]: (num_edge, num_relation)
-        - edge_norm: (num_edge)
-    '''
-    one_hot = F.one_hot(edge_type, num_classes = 2 * num_relation).to(torch.float)
-    deg = scatter_add(one_hot, edge_index[0], dim = 0, dim_size = num_entity)
-    index = edge_type + torch.arange(len(edge_index[0])) * (2 * num_relation)
-    edge_norm = 1 / deg[edge_index[0]].view(-1)[index]
-
-    return edge_norm
-
-def generate_graph(triples):
-    head, rel, tail = triples.transpose()
-    uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
-    head, tail = np.reshape(entity_idx_inv, (2, -1))
-    relabeled_edges = np.stack((head, rel, tail)).transpose()
-
-    relation_entity_table = dict()
-    A_rel = torch.eye(config.relation_total, config.relation_total).cuda()
-    D_rel = np.eye(config.relation_total, config.relation_total)
-    for i in range(relabeled_edges.shape[0]):
-        h, r, t = relabeled_edges[i]
-        relation_entity_table.setdefault(r, set()).add(h)
-        relation_entity_table.setdefault(r, set()).add(t)
-    for relation in range(config.relation_total):
-        if relation in relation_entity_table:
-            for index in range(relation + 1, config.relation_total):
-                if index != relation and index in relation_entity_table:
-                    if not relation_entity_table[relation].isdisjoint(relation_entity_table[index]):
-                        A_rel[relation, index] = 1
-                        A_rel[index, relation] = 1
-                        D_rel[relation, relation] += 1
-
-    D_rel = np.linalg.inv(D_rel)
-    D_rel = torch.Tensor(D_rel).cuda()
-    i = list(range(config.relation_total))
-    D_rel[i, i] = torch.sqrt(D_rel[i, i])
-
-    DAD_rel = D_rel.mm(A_rel).mm(D_rel)
-
-    # Negative sampling
-    samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), negative_rate=1)
-    samples = torch.from_numpy(samples)
-
-    head = torch.tensor(head, dtype=torch.long)
-    tail = torch.tensor(tail, dtype=torch.long)
-    rel = torch.tensor(rel, dtype=torch.long)
-    head, tail = torch.cat((head, tail)), torch.cat((tail, head))
-    rel = torch.cat((rel, rel + config.relation_total))
-
-    edge_index = torch.stack((head, tail))
-    edge_type = rel
-    edge_norm = edge_normalization(edge_type, edge_index, len(uniq_entity), config.relation_total)
-
-    data = Data(edge_index=edge_index)
-    data.entity = torch.from_numpy(uniq_entity)
-    data.edge_type = edge_type
-    data.edge_norm = edge_norm
-    data.samples = samples
-    data.labels = labels
-    data.DAD_rel = DAD_rel
-    data.uniq_entity = uniq_entity
-    data.relabeled_edges = relabeled_edges
-    return data
-
 def main():
     train_triples = config.train_triples
     valid_triples = config.valid_triples
@@ -376,8 +185,9 @@ def main():
 
     criterion = nn.MarginRankingLoss(config.margin, reduction='sum').cuda()
 
+    train_start_time = time.time()
     for epoch in range(config.train_times):
-        start_time = time.time()
+        epoch_start_time = time.time()
         print('----------training the ' + str(epoch) + ' epoch----------')
         model.train()
         optimizer.zero_grad()
@@ -386,13 +196,14 @@ def main():
         all_edges = np.arange(len(train_triples))
         sample_index = np.random.choice(all_edges, sample_size, replace=False)
         sample_edges = train_triples[sample_index]
-        train_data = generate_graph(sample_edges)
+        train_data = generate_graph(sample_edges, config.relation_total)
 
         device = torch.device('cuda')
         train_data.to(device)
 
         entity_context, relation_context = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
 
+        # calculation joint embedding
         head_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.entity[train_data.samples[:, 0]].long())) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 0]])
         rel_o = torch.mul(torch.sigmoid(model.gate_relation), model.relation_emb(train_data.samples[:, 1])) + torch.mul(1 - torch.sigmoid(model.gate_relation), relation_context[train_data.samples[:, 1]])
         tail_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.entity[train_data.samples[:, 2]].long())) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 2]])
@@ -408,11 +219,13 @@ def main():
         optimizer.step()
         torch.cuda.empty_cache()
 
-        end_time = time.time()
+        epoch_end_time = time.time()
         print('----------epoch loss: ' + str(loss.item()) + ' ----------')
-        print('----------epoch training time: ' + str(end_time-start_time) + ' s --------\n')
+        print('----------epoch training time: ' + str(epoch_end_time-epoch_start_time) + ' s --------\n')
 
     print('train ending...')
+    train_end_time = time.time()
+    print('\n Total training time: ', train_end_time-train_start_time)
 
     torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, model_state_file)
 
@@ -420,9 +233,9 @@ def main():
     checkpoint = torch.load(model_state_file)
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
-    torch.no_grad()
+    # torch.no_grad()
 
-    test_data = generate_graph(test_triples)
+    test_data = generate_graph(test_triples, config.relation_total)
     test_data.to(device)
 
     entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type, test_data.edge_norm, test_data.DAD_rel)

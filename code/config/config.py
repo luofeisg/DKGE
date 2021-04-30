@@ -57,7 +57,7 @@ bern = True
 res_dir = './data/' + dataset_v1 + '/parameters/'
 if not os.path.exists(res_dir):
     os.makedirs(res_dir)
-model_state_file = './data/' + dataset_v1 + '/parameters/model_state.pth'
+model_state_file = './data/' + dataset_v1 + '/parameters/LFS_model_state.pth'
 
 print('train_times: ' + str(train_times))
 print('learning_rate: ' + str(learning_rate))

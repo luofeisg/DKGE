@@ -10,13 +10,13 @@ import torch.optim as optim
 
 from config import online_config as config
 import test
+from util.train_util import *
 
 # gpu_ids = [0, 1]
 
 
 class DKGE_Online(nn.Module):
-    def __init__(self, entity_emb, relation_emb, entity_context, relation_context, entity_gcn_weight,
-                 relation_gcn_weight, gate_entity, gate_relation, v_entity, v_relation, entity_o_emb, relation_o_emb):
+    def __init__(self):
         super(DKGE_Online, self).__init__()
 
         # self.entity_emb = nn.Parameter(torch.Tensor(config.entity_total, config.dim))
@@ -24,24 +24,22 @@ class DKGE_Online(nn.Module):
         self.entity_emb = nn.Embedding(config.entity_total, config.dim)
         self.relation_emb = nn.Embedding(config.relation_total, config.dim)
 
-        self.entity_context = nn.Embedding(config.entity_total + 1, config.dim, padding_idx=config.entity_total)
-        self.relation_context = nn.Embedding(config.relation_total + 1, config.dim, padding_idx=config.relation_total)
+        self.entity_context = nn.Embedding(config.entity_total, config.dim)
+        self.relation_context = nn.Embedding(config.relation_total, config.dim)
 
-        self.entity_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim), requires_grad=False)
-        self.relation_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim), requires_grad=False)
+        # self.entity_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim), requires_grad=False)
+        self.relation_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim))
 
-        self.gate_entity = nn.Parameter(torch.Tensor(config.dim), requires_grad=False)
-        self.gate_relation = nn.Parameter(torch.Tensor(config.dim), requires_grad=False)
+        self.gate_entity = nn.Parameter(torch.Tensor(config.dim))
+        self.gate_relation = nn.Parameter(torch.Tensor(config.dim))
 
-        self.v_ent = nn.Parameter(torch.Tensor(config.dim), requires_grad=False)
-        self.v_rel = nn.Parameter(torch.Tensor(config.dim), requires_grad=False)
+        self.v_ent = nn.Parameter(torch.Tensor(config.dim))
+        self.v_rel = nn.Parameter(torch.Tensor(config.dim))
 
-        self.pht_o = dict()
-        self.pr_o = dict()
+        self.conv1 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
+        self.conv2 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
 
-        self._init_parameters(entity_emb, relation_emb, entity_context, relation_context, entity_gcn_weight,
-                              relation_gcn_weight, gate_entity, gate_relation, v_entity, v_relation,
-                              entity_o_emb, relation_o_emb)
+        # self._init_parameters()
 
     def _init_parameters(self, entity_emb, relation_emb, entity_context, relation_context, entity_gcn_weight,
                          relation_gcn_weight, gate_entity, gate_relation, v_entity, v_relation,
@@ -157,140 +155,220 @@ class DKGE_Online(nn.Module):
             r = str(int(pos_r[i]))
             self.pr_o[r] = pr_o[i].detach().cpu().numpy().tolist()
 
-    def forward(self, epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A):
-        # multi golden and multi negative
-        pos_h, pos_r, pos_t = golden_triples
-        neg_h, neg_r, neg_t = negative_triples
+    def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
+        entity_context = self.entity_context(entity.long())
+        relation_idx = torch.arange(config.relation_total).cuda()
+        relation_context = self.relation_context(relation_idx)
 
-        # p_h = self.entity_emb[pos_h.cpu().numpy()]
-        # p_t = self.entity_emb[pos_t.cpu().numpy()]
-        # p_r = self.relation_emb[pos_r.cpu().numpy()]
-        # n_h = self.entity_emb[neg_h.cpu().numpy()]
-        # n_t = self.entity_emb[neg_t.cpu().numpy()]
-        # n_r = self.relation_emb[neg_r.cpu().numpy()]
-        p_h = self.entity_emb(pos_h)
-        p_t = self.entity_emb(pos_t)
-        p_r = self.relation_emb(pos_r)
-        n_h = self.entity_emb(neg_h)
-        n_t = self.entity_emb(neg_t)
-        n_r = self.relation_emb(neg_r)
+        entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
+        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        entity_context = F.relu(self.conv2(entity_context, edge_index, edge_type, edge_norm))
 
-        ph_adj_entity_list = self.get_entity_context(pos_h)
-        pt_adj_entity_list = self.get_entity_context(pos_t)
-        nh_adj_entity_list = self.get_entity_context(neg_h)
-        nt_adj_entity_list = self.get_entity_context(neg_t)
-        pr_adj_relation_list = self.get_relation_context(pos_r)
-        nr_adj_relation_list = self.get_relation_context(neg_r)
+        relation_context = torch.matmul(DAD_rel, relation_context)
+        relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
 
-        ph_adj_entity_vec_list = self.get_adj_entity_vec(p_h, ph_adj_entity_list)
-        pt_adj_entity_vec_list = self.get_adj_entity_vec(p_t, pt_adj_entity_list)
-        nh_adj_entity_vec_list = self.get_adj_entity_vec(n_h, nh_adj_entity_list)
-        nt_adj_entity_vec_list = self.get_adj_entity_vec(n_t, nt_adj_entity_list)
-        pr_adj_relation_vec_list = self.get_adj_relation_vec(p_r, pr_adj_relation_list)
-        nr_adj_relation_vec_list = self.get_adj_relation_vec(n_r, nr_adj_relation_list)
+        return entity_context, relation_context
 
-        # gcn
-        ph_adj_entity_vec_list = self.gcn(ph_A, ph_adj_entity_vec_list, target='entity')
-        pt_adj_entity_vec_list = self.gcn(pt_A, pt_adj_entity_vec_list, target='entity')
-        nh_adj_entity_vec_list = self.gcn(nh_A, nh_adj_entity_vec_list, target='entity')
-        nt_adj_entity_vec_list = self.gcn(nt_A, nt_adj_entity_vec_list, target='entity')
-        pr_adj_relation_vec_list = self.gcn(pr_A, pr_adj_relation_vec_list, target='relation')
-        nr_adj_relation_vec_list = self.gcn(nr_A, nr_adj_relation_vec_list, target='relation')
-
-        ph_sg = self.calc_subgraph_vec(p_h, ph_adj_entity_vec_list, target='entity')
-        pt_sg = self.calc_subgraph_vec(p_t, pt_adj_entity_vec_list, target='entity')
-        nh_sg = self.calc_subgraph_vec(n_h, nh_adj_entity_vec_list, target='entity')
-        nt_sg = self.calc_subgraph_vec(n_t, nt_adj_entity_vec_list, target='entity')
-        pr_sg = self.calc_subgraph_vec(p_r, pr_adj_relation_vec_list, target='relation')
-        nr_sg = self.calc_subgraph_vec(n_r, nr_adj_relation_vec_list, target='relation')
-
-        ph_o = torch.mul(F.sigmoid(self.gate_entity), p_h) + torch.mul(1 - F.sigmoid(self.gate_entity), ph_sg)
-        pt_o = torch.mul(F.sigmoid(self.gate_entity), p_t) + torch.mul(1 - F.sigmoid(self.gate_entity), pt_sg)
-        nh_o = torch.mul(F.sigmoid(self.gate_entity), n_h) + torch.mul(1 - F.sigmoid(self.gate_entity), nh_sg)
-        nt_o = torch.mul(F.sigmoid(self.gate_entity), n_t) + torch.mul(1 - F.sigmoid(self.gate_entity), nt_sg)
-        pr_o = torch.mul(F.sigmoid(self.gate_relation), p_r) + torch.mul(1 - F.sigmoid(self.gate_relation), pr_sg)
-        nr_o = torch.mul(F.sigmoid(self.gate_relation), n_r) + torch.mul(1 - F.sigmoid(self.gate_relation), nr_sg)
-
-        # score for loss
-        p_score = self._calc(ph_o, pt_o, pr_o)
-        n_score = self._calc(nh_o, nt_o, nr_o)
-
-        if epoch == config.train_times - 1:
-            self.save_phrt_o(pos_h, pos_r, pos_t, ph_o, pr_o, pt_o)
-
-        return p_score, n_score
+    # def forward(self, epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A):
+    #     # multi golden and multi negative
+    #     pos_h, pos_r, pos_t = golden_triples
+    #     neg_h, neg_r, neg_t = negative_triples
+    #
+    #     # p_h = self.entity_emb[pos_h.cpu().numpy()]
+    #     # p_t = self.entity_emb[pos_t.cpu().numpy()]
+    #     # p_r = self.relation_emb[pos_r.cpu().numpy()]
+    #     # n_h = self.entity_emb[neg_h.cpu().numpy()]
+    #     # n_t = self.entity_emb[neg_t.cpu().numpy()]
+    #     # n_r = self.relation_emb[neg_r.cpu().numpy()]
+    #     p_h = self.entity_emb(pos_h)
+    #     p_t = self.entity_emb(pos_t)
+    #     p_r = self.relation_emb(pos_r)
+    #     n_h = self.entity_emb(neg_h)
+    #     n_t = self.entity_emb(neg_t)
+    #     n_r = self.relation_emb(neg_r)
+    #
+    #     ph_adj_entity_list = self.get_entity_context(pos_h)
+    #     pt_adj_entity_list = self.get_entity_context(pos_t)
+    #     nh_adj_entity_list = self.get_entity_context(neg_h)
+    #     nt_adj_entity_list = self.get_entity_context(neg_t)
+    #     pr_adj_relation_list = self.get_relation_context(pos_r)
+    #     nr_adj_relation_list = self.get_relation_context(neg_r)
+    #
+    #     ph_adj_entity_vec_list = self.get_adj_entity_vec(p_h, ph_adj_entity_list)
+    #     pt_adj_entity_vec_list = self.get_adj_entity_vec(p_t, pt_adj_entity_list)
+    #     nh_adj_entity_vec_list = self.get_adj_entity_vec(n_h, nh_adj_entity_list)
+    #     nt_adj_entity_vec_list = self.get_adj_entity_vec(n_t, nt_adj_entity_list)
+    #     pr_adj_relation_vec_list = self.get_adj_relation_vec(p_r, pr_adj_relation_list)
+    #     nr_adj_relation_vec_list = self.get_adj_relation_vec(n_r, nr_adj_relation_list)
+    #
+    #     # gcn
+    #     ph_adj_entity_vec_list = self.gcn(ph_A, ph_adj_entity_vec_list, target='entity')
+    #     pt_adj_entity_vec_list = self.gcn(pt_A, pt_adj_entity_vec_list, target='entity')
+    #     nh_adj_entity_vec_list = self.gcn(nh_A, nh_adj_entity_vec_list, target='entity')
+    #     nt_adj_entity_vec_list = self.gcn(nt_A, nt_adj_entity_vec_list, target='entity')
+    #     pr_adj_relation_vec_list = self.gcn(pr_A, pr_adj_relation_vec_list, target='relation')
+    #     nr_adj_relation_vec_list = self.gcn(nr_A, nr_adj_relation_vec_list, target='relation')
+    #
+    #     ph_sg = self.calc_subgraph_vec(p_h, ph_adj_entity_vec_list, target='entity')
+    #     pt_sg = self.calc_subgraph_vec(p_t, pt_adj_entity_vec_list, target='entity')
+    #     nh_sg = self.calc_subgraph_vec(n_h, nh_adj_entity_vec_list, target='entity')
+    #     nt_sg = self.calc_subgraph_vec(n_t, nt_adj_entity_vec_list, target='entity')
+    #     pr_sg = self.calc_subgraph_vec(p_r, pr_adj_relation_vec_list, target='relation')
+    #     nr_sg = self.calc_subgraph_vec(n_r, nr_adj_relation_vec_list, target='relation')
+    #
+    #     ph_o = torch.mul(F.sigmoid(self.gate_entity), p_h) + torch.mul(1 - F.sigmoid(self.gate_entity), ph_sg)
+    #     pt_o = torch.mul(F.sigmoid(self.gate_entity), p_t) + torch.mul(1 - F.sigmoid(self.gate_entity), pt_sg)
+    #     nh_o = torch.mul(F.sigmoid(self.gate_entity), n_h) + torch.mul(1 - F.sigmoid(self.gate_entity), nh_sg)
+    #     nt_o = torch.mul(F.sigmoid(self.gate_entity), n_t) + torch.mul(1 - F.sigmoid(self.gate_entity), nt_sg)
+    #     pr_o = torch.mul(F.sigmoid(self.gate_relation), p_r) + torch.mul(1 - F.sigmoid(self.gate_relation), pr_sg)
+    #     nr_o = torch.mul(F.sigmoid(self.gate_relation), n_r) + torch.mul(1 - F.sigmoid(self.gate_relation), nr_sg)
+    #
+    #     # score for loss
+    #     p_score = self._calc(ph_o, pt_o, pr_o)
+    #     n_score = self._calc(nh_o, nt_o, nr_o)
+    #
+    #     if epoch == config.train_times - 1:
+    #         self.save_phrt_o(pos_h, pos_r, pos_t, ph_o, pr_o, pt_o)
+    #
+    #     return p_score, n_score
 
 
 def main():
     print('preparing online data...')
-    entity_emb, relation_emb, entity_context, relation_context, \
-    entity_gcn_weight, relation_gcn_weight, gate_entity, gate_relation, v_entity, v_relation, \
-    phs, prs, pts, nhs, nrs, nts, \
-    affected_entities, affected_relations, added_entities, added_relations, \
-    entity_o_emb, relation_o_emb = config.prepare_online_data(config.dataset_v1_res_dir)
+    new_model_parameter, affected_triples = config.prepare_online_data(config.dataset_v1_res_dir)
     print('preparing online data complete')
 
-    print('train starting...')
+    device = torch.device('cuda')
+    sample_size = config.sample_size
+    test_triples = config.test_triples
+    model_state_file = config.model_state_file
 
-    dynamicKGE = DKGE_Online(entity_emb, relation_emb, entity_context, relation_context, entity_gcn_weight,
-                             relation_gcn_weight, gate_entity, gate_relation, v_entity, v_relation,
-                             entity_o_emb, relation_o_emb).cuda()
+    print('train starting...')
+    model = DKGE_Online().cuda()
+    model.load_state_dict(new_model_parameter)
+
+    # keep some parameters unchanged
+    for param in model.conv1.parameters():
+        param.requires_grad = False
+    for param in model.conv2.parameters():
+        param.requires_grad = False
+    model.relation_gcn_weight.requires_grad = False
+    model.gate_entity.requires_grad = False
+    model.gate_relation.requires_grad = False
+    model.v_ent.requires_grad = False
+    model.v_rel.requires_grad = False
 
     if config.optimizer == "SGD":
-        optimizer = optim.SGD(dynamicKGE.parameters(), lr=config.learning_rate)
+        optimizer = optim.SGD(model.parameters(), lr=config.learning_rate)
     elif config.optimizer == "Adam":
-        optimizer = optim.Adam(dynamicKGE.parameters(), lr=config.learning_rate)
+        optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
     elif config.optimizer == "Adagrad":
-        optimizer = optim.Adagrad(dynamicKGE.parameters(), lr=config.learning_rate)
+        optimizer = optim.Adagrad(model.parameters(), lr=config.learning_rate)
     elif config.optimizer == "Adadelta":
-        optimizer = optim.Adadelta(dynamicKGE.parameters(), lr=config.learning_rate)
+        optimizer = optim.Adadelta(model.parameters(), lr=config.learning_rate)
     else:
-        optimizer = optim.SGD(dynamicKGE.parameters(), lr=config.learning_rate)
+        optimizer = optim.SGD(model.parameters(), lr=config.learning_rate)
 
-    criterion = nn.MarginRankingLoss(config.margin, False).cuda()
+    criterion = nn.MarginRankingLoss(config.margin, reduction='sum').cuda()
 
-    ent_emb_nochange_list = list(config.entity_set - affected_entities - added_entities)
-    rel_emb_nochange_list = list(config.relation_set - affected_relations - added_relations)
-    ent_context_emb_nochange_list = list(config.entity_set - added_entities)
-    rel_context_emb_nochange_list = list(config.relation_set - added_relations)
-
+    train_start_time = time.time()
     for epoch in range(config.train_times):
-        start_time = time.time()
+        epoch_start_time = time.time()
         print('----------training the ' + str(epoch) + ' epoch----------')
-        epoch_avg_loss = 0.0
-        nbatchs = math.ceil(len(phs) / config.batch_size)
-        for batch in range(nbatchs):
-            optimizer.zero_grad()
-            golden_triples, negative_triples = config.get_batch(config.batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts)
-            ph_A, pr_A, pt_A = config.get_batch_A(golden_triples, config.entity_A, config.relation_A)
-            nh_A, nr_A, nt_A = config.get_batch_A(negative_triples, config.entity_A, config.relation_A)
+        model.train()
+        optimizer.zero_grad()
 
-            p_scores, n_scores = dynamicKGE(epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A)
-            y = torch.Tensor([-1]).cuda()
-            loss = criterion(p_scores, n_scores, y)
+        # sample from affected triples
+        all_edges = np.arange(len(affected_triples))
+        sample_index = np.random.choice(all_edges, sample_size, replace=False)
+        sample_edges = affected_triples[sample_index]
+        train_data = generate_graph(sample_edges, config.relation_total)
+        train_data.to(device)
 
-            loss.backward()
-            optimizer.step()
-            torch.cuda.empty_cache()
+        entity_context, relation_context = model(train_data.entity, train_data.edge_index, train_data.edge_type,
+                                                 train_data.edge_norm, train_data.DAD_rel)
 
-            epoch_avg_loss += (float(loss.item()) / nbatchs)
+        # calculation joint embedding
+        head_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.entity[train_data.samples[:, 0]].long())) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 0]])
+        rel_o = torch.mul(torch.sigmoid(model.gate_relation), model.relation_emb(train_data.samples[:, 1])) + torch.mul(1 - torch.sigmoid(model.gate_relation), relation_context[train_data.samples[:, 1]])
+        tail_o = torch.mul(torch.sigmoid(model.gate_entity), model.entity_emb(train_data.entity[train_data.samples[:, 2]].long())) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context[train_data.samples[:, 2]])
 
-            dynamicKGE.entity_emb.weight.data[ent_emb_nochange_list] = entity_emb[ent_emb_nochange_list]
-            dynamicKGE.relation_emb.weight.data[rel_emb_nochange_list] = relation_emb[rel_emb_nochange_list]
-            dynamicKGE.entity_context.weight.data[ent_context_emb_nochange_list] = entity_context[ent_context_emb_nochange_list]
-            dynamicKGE.relation_context.weight.data[rel_context_emb_nochange_list] = relation_context[rel_context_emb_nochange_list]
+        # score for loss
+        p_scores = model._calc(head_o[0:train_data.samples.size()[0]//2], tail_o[0:train_data.samples.size()[0]//2], rel_o[0:train_data.samples.size()[0]//2])
+        n_scores = model._calc(head_o[train_data.samples.size()[0]//2:], tail_o[train_data.samples.size()[0]//2:], rel_o[train_data.samples.size()[0]//2:])
 
-        end_time = time.time()
-        print('----------epoch avg loss: ' + str(epoch_avg_loss) + ' ----------')
-        print('----------epoch training time: ' + str(end_time - start_time) + ' s --------\n')
+        y = torch.Tensor([-1]*sample_size).cuda()
+        loss = criterion(p_scores, n_scores, y)
+
+        loss.backward()
+        optimizer.step()
+        torch.cuda.empty_cache()
+
+        epoch_end_time = time.time()
+        print('----------epoch loss: ' + str(loss.item()) + ' ----------')
+        print('----------epoch training time: ' + str(epoch_end_time - epoch_start_time) + ' s --------\n')
+
     print('train ending...')
+    train_end_time = time.time()
+    print('\n Total training time: ', train_end_time - train_start_time)
 
-    dynamicKGE.save_parameters(config.res_dir)
+    torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, model_state_file)
 
-    entity_emb, relation_emb = config.load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
     print('test link prediction starting...')
-    test.test_link_prediction(config.test_list, set(config.train_list), entity_emb, relation_emb, config.norm)
-    print('test link prediction ending...')
+    checkpoint = torch.load(model_state_file)
+    model.load_state_dict(checkpoint['state_dict'])
+    model.eval()
 
+    test_data = generate_graph(test_triples, config.relation_total)
+    test_data.to(device)
+
+    entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type, test_data.edge_norm, test_data.DAD_rel)
+    entity_embedding = model.entity_emb(torch.from_numpy(test_data.uniq_entity).long().cuda())
+    relation_idx = torch.arange(config.relation_total).cuda()
+    relation_embedding = model.relation_emb(relation_idx)
+    entity_o = torch.mul(torch.sigmoid(model.gate_entity), entity_embedding) + torch.mul(1 - torch.sigmoid(model.gate_entity), entity_context)
+    relation_o = torch.mul(torch.sigmoid(model.gate_relation), relation_embedding) + torch.mul(1 - torch.sigmoid(model.gate_relation), relation_context)
+    # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
+
+    print('test link prediction starts...')
+    test.test_link_prediction(test_data.relabeled_edges, entity_o, relation_o, config.norm, test_data)
+    print('test link prediction ends...')
+
+    #     epoch_avg_loss = 0.0
+    #     nbatchs = math.ceil(len(phs) / config.batch_size)
+    #     for batch in range(nbatchs):
+    #         optimizer.zero_grad()
+    #         golden_triples, negative_triples = config.get_batch(config.batch_size, batch, epoch, phs, prs, pts, nhs, nrs, nts)
+    #         ph_A, pr_A, pt_A = config.get_batch_A(golden_triples, config.entity_A, config.relation_A)
+    #         nh_A, nr_A, nt_A = config.get_batch_A(negative_triples, config.entity_A, config.relation_A)
+    #
+    #         p_scores, n_scores = dynamicKGE(epoch, golden_triples, negative_triples, ph_A, pr_A, pt_A, nh_A, nr_A, nt_A)
+    #         y = torch.Tensor([-1]).cuda()
+    #         loss = criterion(p_scores, n_scores, y)
+    #
+    #         loss.backward()
+    #         optimizer.step()
+    #         torch.cuda.empty_cache()
+    #
+    #         epoch_avg_loss += (float(loss.item()) / nbatchs)
+    #
+    #         dynamicKGE.entity_emb.weight.data[ent_emb_nochange_list] = entity_emb[ent_emb_nochange_list]
+    #         dynamicKGE.relation_emb.weight.data[rel_emb_nochange_list] = relation_emb[rel_emb_nochange_list]
+    #         dynamicKGE.entity_context.weight.data[ent_context_emb_nochange_list] = entity_context[ent_context_emb_nochange_list]
+    #         dynamicKGE.relation_context.weight.data[rel_context_emb_nochange_list] = relation_context[rel_context_emb_nochange_list]
+    #
+    #     epoch_end_time = time.time()
+    #     print('----------epoch avg loss: ' + str(epoch_avg_loss) + ' ----------')
+    #     print('----------epoch training time: ' + str(epoch_end_time - epoch_start_time) + ' s --------\n')
+    # print('train ending...')
+    # train_end_time = time.time()
+    # print('\n Total training time: ', train_end_time-train_start_time)
+    #
+    # dynamicKGE.save_parameters(config.res_dir)
+    #
+    # entity_emb, relation_emb = config.load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
+    # print('test link prediction starting...')
+    # test.test_link_prediction(config.test_list, set(config.train_list), entity_emb, relation_emb, config.norm)
+    # print('test link prediction ending...')
 
 main()
