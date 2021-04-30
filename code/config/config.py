@@ -16,7 +16,7 @@ parser.add_argument('-o', '--optim', type=str, dest="optim", help="optimizer", r
 parser.add_argument('-p', '--path', type=str, dest="dataset", help="dataset path", required=False, default="YAGO-3SP/snapshot1")
 parser.add_argument('-t', '--test_mode', type=bool, dest="test_mode", help="if test mode on", required=False, default=False)
 parser.add_argument('-g', '--gpu', type=int, dest="gpu_id", help="select gpu", required=False, default=0)
-parser.add_argument('-s', '--sample_size', type=int, dest="sample_size", help="sample size", required=False, default=4000)
+parser.add_argument('-s', '--sample_size', type=int, dest="sample_size", help="sample size", required=False, default=3000)
 args = parser.parse_args()
 
 os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
@@ -45,8 +45,8 @@ print('test_total: ' + str(len(test_triples)))
 max_context = 30
 train_times = args.train_epochs
 learning_rate = args.learning_rate
-batch_size = args.batchsize
-nbatchs = math.ceil(len(train_triples) / batch_size)
+# batch_size = args.batchsize
+# nbatchs = math.ceil(len(train_triples) / batch_size)
 margin = args.margin
 dim = args.dimension
 norm = args.norm
@@ -61,12 +61,14 @@ model_state_file = './data/' + dataset_v1 + '/parameters/LFS_model_state.pth'
 
 print('train_times: ' + str(train_times))
 print('learning_rate: ' + str(learning_rate))
-print('batch_size: ' + str(batch_size))
-print('nbatchs: ' + str(nbatchs))
+print('sample_size: ' + str(sample_size))
+# print('batch_size: ' + str(batch_size))
+# print('nbatchs: ' + str(nbatchs))
 print('dim: ' + str(dim))
 print('margin: ' + str(margin))
 print('bern: ' + str(bern))
 print('result directory: ' + str(res_dir))
+print('model_state_file: ' + model_state_file)
 
 # if not test_mode:
 #     print("Constructing adj table...")
