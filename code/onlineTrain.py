@@ -371,4 +371,5 @@ def main():
     # test.test_link_prediction(config.test_list, set(config.train_list), entity_emb, relation_emb, config.norm)
     # print('test link prediction ending...')
 
-main()
+if __name__ == "__main__":
+    main()

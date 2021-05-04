@@ -19,7 +19,7 @@ parser.add_argument('-o', '--optim', type=str, dest="optim", help="optimizer", r
 parser.add_argument('-p1', '--path1', type=str, dest="dataset_v1", help="dataset_v1 path", required=False, default="YAGO-3SP/snapshot1")
 parser.add_argument('-p2', '--path2', type=str, dest="dataset_v2", help="dataset_v2 path", required=False, default="YAGO-3SP/snapshot2")
 parser.add_argument('-g', '--gpu', type=int, dest="gpu_id", help="select gpu", required=False, default=0)
-parser.add_argument('-s', '--sample_size', type=int, dest="sample_size", help="sample size", required=False, default=4000)
+parser.add_argument('-s', '--sample_size', type=int, dest="sample_size", help="sample size", required=False, default=3000)
 # parser.add_argument('-t', '--test', type=int, dest="test_epoch", help="test epoch", required=False, default=0)
 args = parser.parse_args()
 
@@ -49,8 +49,8 @@ print('test_total: ' + str(len(test_list)))
 max_context = 30
 train_times = args.train_epochs
 learning_rate = args.learning_rate
-batch_size = args.batchsize
-nbatchs = math.ceil(len(train_list) / batch_size)
+# batch_size = args.batchsize
+# nbatchs = math.ceil(len(train_list) / batch_size)
 margin = args.margin
 dim = args.dimension
 norm = args.norm
@@ -65,12 +65,15 @@ model_state_file = './data/' + dataset_v2 + '/parameters/OL_model_state.pth'
 
 print('train_times: ' + str(train_times))
 print('learning_rate: ' + str(learning_rate))
-print('batch_size: ' + str(batch_size))
-print('nbatchs: ' + str(nbatchs))
+# print('batch_size: ' + str(batch_size))
+# print('nbatchs: ' + str(nbatchs))
 print('dim: ' + str(dim))
 print('margin: ' + str(margin))
+print('sample_size: ' + str(sample_size))
 print('bern: ' + str(bern))
 print('result directory: ' + str(res_dir))
+print('dataset_v1_res_dir: ' + dataset_v1_res_dir)
+print('model_state_file: ' + model_state_file)
 
 # print("Constructing adj table...")
 # entity_adj_table, relation_adj_table, max_context_num, entity_A, relation_A = construct_adj_table(train_list,

@@ -229,7 +229,7 @@ def main():
 
     torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, model_state_file)
 
-    print('test link prediction starting...')
+    print('prepare test data...')
     checkpoint = torch.load(model_state_file)
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
@@ -250,4 +250,5 @@ def main():
     test.test_link_prediction(test_data.relabeled_edges, entity_o, relation_o, config.norm, test_data)
     print('test link prediction ends...')
 
-main()
+if __name__ == "__main__":
+    main()
