@@ -331,7 +331,7 @@ def main():
     # entity_emb, relation_emb = load_o_emb(config.res_dir, config.entity_total, config.relation_total, config.dim)
 
     print('test link prediction starts...')
-    test.test_link_prediction(test_data.relabeled_edges, entity_o, relation_o, config.norm, test_data)
+    test.test_link_prediction(test_data.relabeled_edges, entity_o, relation_o, config.norm)
     print('test link prediction ends...')
 
     #     epoch_avg_loss = 0.0

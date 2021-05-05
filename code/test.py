@@ -2,6 +2,15 @@ import torch
 import os
 from util.test_util import *
 
+
+def cal_score(entity_o, relation_o, triplets, norm):
+    h = entity_o[triplets[:, 0]]
+    r = relation_o[triplets[:, 1]]
+    t = entity_o[triplets[:, 2]]
+    score = torch.norm(h + r - t, p=norm, dim=1)
+
+    return score
+
 def _calc(h, t, r, norm):
     return torch.norm(h + r - t, p=norm, dim=1).cpu().detach().numpy().tolist()
 
@@ -25,13 +34,15 @@ def predict(batch, entity_emb, relation_emb, norm):
 
 def test_head(golden_triple, entity_emb, relation_emb, norm):
     head_batch = get_head_batch(golden_triple, len(entity_emb))
-    value = predict(head_batch, entity_emb, relation_emb, norm)
-    golden_value = value[golden_triple[0]]
+    scores = cal_score(entity_emb, relation_emb, head_batch, norm)
+    golden_score = scores[golden_triple[0]]
+    # value = predict(head_batch, entity_emb, relation_emb, norm)
+    # golden_value = value[golden_triple[0]]
     # li = np.argsort(value)
     res = 1
     sub = 0
-    for pos, val in enumerate(value):
-        if val < golden_value:
+    for pos, val in enumerate(scores):
+        if val < golden_score:
             res += 1
             # if (pos, golden_triple[1], golden_triple[2]) in train_set:
             #     sub += 1
@@ -41,13 +52,15 @@ def test_head(golden_triple, entity_emb, relation_emb, norm):
 
 def test_tail(golden_triple, entity_emb, relation_emb, norm):
     tail_batch = get_tail_batch(golden_triple, len(entity_emb))
-    value = predict(tail_batch, entity_emb, relation_emb, norm)
-    golden_value = value[golden_triple[2]]
+    scores = cal_score(entity_emb, relation_emb, tail_batch, norm)
+    golden_score = scores[golden_triple[2]]
+    # value = predict(tail_batch, entity_emb, relation_emb, norm)
+    # golden_value = value[golden_triple[2]]
     # li = np.argsort(value)
     res = 1
     sub = 0
-    for pos, val in enumerate(value):
-        if val < golden_value:
+    for pos, val in enumerate(scores):
+        if val < golden_score:
             res += 1
             # if (golden_triple[0], golden_triple[1], pos) in train_set:
             #     sub += 1
@@ -55,7 +68,7 @@ def test_tail(golden_triple, entity_emb, relation_emb, norm):
     return res
 
 
-def test_link_prediction(test_triples, entity_o, relation_o, norm, test_data):
+def test_link_prediction(test_triples, entity_o, relation_o, norm):
     test_total = len(test_triples)
 
     l_mr = 0
@@ -135,58 +148,70 @@ def test_link_prediction(test_triples, entity_o, relation_o, norm, test_data):
 
 if __name__ == "__main__":
     online = False
-    if not online:
-        # from config import config
-        from train import *
-        from util.train_util import *
+    with torch.no_grad():
+        if not online:
+            # from config import config
+            from train import *
+            from util.train_util import *
 
-        print('prepare test data...')
-        model = DynamicKGE(config).cuda()
-        checkpoint = torch.load(config.model_state_file)
-        model.load_state_dict(checkpoint['state_dict'])
-        model.eval()
-        device = torch.device('cuda')
+            print('prepare test data...')
+            model = DynamicKGE(config).cuda()
+            checkpoint = torch.load(config.model_state_file)
+            model.load_state_dict(checkpoint['state_dict'])
+            model.eval()
+            device = torch.device('cuda')
 
-        test_data = generate_graph(config.test_triples, config.relation_total)
-        test_data.to(device)
+            train_data = generate_graph(config.train_triples[0:10000], config.relation_total)
+            train_data.to(device)
+            entity_context, relation_context = model.forward(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
+            entity_embedding = model.entity_emb(torch.from_numpy(train_data.uniq_entity).long().cuda())
+            relation_embedding = model.relation_emb.weight
+            entity_o = torch.mul(torch.sigmoid(model.gate_entity), entity_embedding) + torch.mul(
+                1 - torch.sigmoid(model.gate_entity), entity_context)
+            relation_o = torch.mul(torch.sigmoid(model.gate_relation), relation_embedding) + torch.mul(
+                1 - torch.sigmoid(model.gate_relation), relation_context)
 
-        entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type,
-                                                 test_data.edge_norm, test_data.DAD_rel)
-        entity_embedding = model.entity_emb(torch.from_numpy(test_data.uniq_entity).long().cuda())
-        relation_idx = torch.arange(config.relation_total).cuda()
-        relation_embedding = model.relation_emb(relation_idx)
-        entity_o = torch.mul(torch.sigmoid(model.gate_entity), entity_embedding) + torch.mul(
-            1 - torch.sigmoid(model.gate_entity), entity_context)
-        relation_o = torch.mul(torch.sigmoid(model.gate_relation), relation_embedding) + torch.mul(
-            1 - torch.sigmoid(model.gate_relation), relation_context)
+            test_link_prediction(train_data.relabeled_edges[0:500], entity_o, relation_o, config.norm)
 
-        test_link_prediction(test_data.relabeled_edges, entity_o, relation_o, config.norm, test_data)
-        print('test link prediction ending...')
+            # test_data = generate_graph(config.test_triples, config.relation_total)
+            # test_data.to(device)
 
-    if online:
-        from onlineTrain import *
+            # entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type,
+            #                                          test_data.edge_norm, test_data.DAD_rel)
+            # entity_embedding = model.entity_emb(torch.from_numpy(test_data.uniq_entity).long().cuda())
+            # relation_embedding = model.relation_emb.weight
+            # entity_o = torch.mul(torch.sigmoid(model.gate_entity), entity_embedding) + torch.mul(
+            #     1 - torch.sigmoid(model.gate_entity), entity_context)
+            # relation_o = torch.mul(torch.sigmoid(model.gate_relation), relation_embedding) + torch.mul(
+            #     1 - torch.sigmoid(model.gate_relation), relation_context)
+            #
+            # test_link_prediction(test_data.relabeled_edges, entity_o, relation_o, config.norm, test_data)
+            print('test link prediction ending...')
 
-        print('prepare test data...')
-        model = DKGE_Online().cuda()
-        checkpoint = torch.load(config.model_state_file)
-        model.load_state_dict(checkpoint['state_dict'])
-        model.eval()
-        device = torch.device('cuda')
+        if online:
+            from onlineTrain import *
 
-        test_data = generate_graph(config.test_triples, config.relation_total)
-        test_data.to(device)
+            print('prepare test data...')
+            model = DKGE_Online().cuda()
+            checkpoint = torch.load(config.model_state_file)
+            model.load_state_dict(checkpoint['state_dict'])
+            model.eval()
+            device = torch.device('cuda')
 
-        entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type,
-                                                 test_data.edge_norm, test_data.DAD_rel)
-        entity_embedding = model.entity_emb(torch.from_numpy(test_data.uniq_entity).long().cuda())
-        relation_idx = torch.arange(config.relation_total).cuda()
-        relation_embedding = model.relation_emb(relation_idx)
-        entity_o = torch.mul(torch.sigmoid(model.gate_entity), entity_embedding) + torch.mul(
-            1 - torch.sigmoid(model.gate_entity), entity_context)
-        relation_o = torch.mul(torch.sigmoid(model.gate_relation), relation_embedding) + torch.mul(
-            1 - torch.sigmoid(model.gate_relation), relation_context)
+            test_data = generate_graph(config.test_triples, config.relation_total)
+            test_data.to(device)
 
-        test_link_prediction(test_data.relabeled_edges, entity_o, relation_o, config.norm, test_data)
-        print('test link prediction ending...')
+            entity_context, relation_context = model(test_data.entity, test_data.edge_index, test_data.edge_type,
+                                                     test_data.edge_norm, test_data.DAD_rel)
+            entity_embedding = model.entity_emb(torch.from_numpy(test_data.uniq_entity).long().cuda())
+            relation_idx = torch.arange(config.relation_total).cuda()
+            relation_embedding = model.relation_emb(relation_idx)
+            entity_o = torch.mul(torch.sigmoid(model.gate_entity), entity_embedding) + torch.mul(
+                1 - torch.sigmoid(model.gate_entity), entity_context)
+            relation_o = torch.mul(torch.sigmoid(model.gate_relation), relation_embedding) + torch.mul(
+                1 - torch.sigmoid(model.gate_relation), relation_context)
+
+            test_link_prediction(test_data.relabeled_edges, entity_o, relation_o, config.norm, test_data)
+            print('test link prediction ending...')
 
 

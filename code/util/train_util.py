@@ -85,8 +85,21 @@ class RGCNConv(MessagePassing):
             out = torch.index_select(w, 0, index)
         else:
             w = w.view(self.num_relations, self.in_channels, self.out_channels)
-            w = torch.index_select(w, 0, edge_type)
-            out = torch.bmm(x_j.unsqueeze(1), w).squeeze(-2)
+            if edge_type.shape[0] > 3000:  # prevent memory overflow, only for testing temporarily
+                with torch.no_grad():
+                    batch_size = 3000
+                    batches = math.ceil(edge_type.shape[0]/batch_size)
+                    out = torch.zeros_like(x_j)
+                    for batch in range(batches):
+                        index1 = batch*batch_size
+                        index2 = min((batch+1)*batch_size, edge_type.shape[0])
+                        edge_type_batch = edge_type[index1:index2]
+                        w_batch = torch.index_select(w, 0, edge_type_batch)
+                        x_j_batch = x_j[index1:index2]
+                        out[index1:index2] = torch.bmm(x_j_batch.unsqueeze(1), w_batch).squeeze(-2)
+            else:
+                w = torch.index_select(w, 0, edge_type)
+                out = torch.bmm(x_j.unsqueeze(1), w).squeeze(-2)
 
         return out if edge_norm is None else out * edge_norm.view(-1, 1)
 
@@ -187,7 +200,7 @@ def generate_graph(triples, relation_total):
     data.edge_type = edge_type
     data.edge_norm = edge_norm
     data.samples = samples
-    data.labels = labels
+    data.labels = torch.from_numpy(labels)
     data.DAD_rel = DAD_rel
     data.uniq_entity = uniq_entity
     data.relabeled_edges = relabeled_edges
