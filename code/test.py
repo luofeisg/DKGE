@@ -155,6 +155,8 @@ def test_link_prediction(test_triples, entity_o, relation_o, norm):
     # print('tail(filter)\t\t%.3f\t\t\t' % r_mr_filter)
     # print('average(filter)\t\t%.3f\t\t\t' % ((l_mr_filter + r_mr_filter) / 2))
 
+    return (l_mrr + r_mrr) / 2
+
 
 if __name__ == "__main__":
     online = False

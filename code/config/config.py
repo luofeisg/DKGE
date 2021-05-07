@@ -16,7 +16,8 @@ parser.add_argument('-o', '--optim', type=str, dest="optim", help="optimizer", r
 parser.add_argument('-p', '--path', type=str, dest="dataset", help="dataset path", required=False, default="YAGO-3SP/snapshot1")
 parser.add_argument('-t', '--test_mode', type=bool, dest="test_mode", help="if test mode on", required=False, default=False)
 parser.add_argument('-g', '--gpu', type=int, dest="gpu_id", help="select gpu", required=False, default=0)
-parser.add_argument('-s', '--sample_size', type=int, dest="sample_size", help="sample size", required=False, default=3000)
+parser.add_argument('-s', '--sample_size', type=int, dest="sample_size", help="sample size", required=False, default=10000)
+parser.add_argument('-v', '--validate_every', type=int, dest="validate_every", help="validate every n epochs", required=False, default=1000)
 args = parser.parse_args()
 
 os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
@@ -53,6 +54,7 @@ norm = args.norm
 optimizer = args.optim
 test_mode = args.test_mode
 sample_size = args.sample_size
+validate_every = args.validate_every
 bern = True
 res_dir = './data/' + dataset_v1 + '/parameters/'
 if not os.path.exists(res_dir):

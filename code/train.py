@@ -183,9 +183,17 @@ def main():
     valid_triples = config.valid_triples
     test_triples = config.test_triples
     sample_size = config.sample_size
+    validate_every = config.validate_every
     negative_rate = 1
     num_rels = config.relation_total
     model_state_file = config.model_state_file
+
+    train_graph = generate_graph(train_triples, config.relation_total)
+    device_cuda = torch.device('cuda')
+    device_cpu = torch.device('cpu')
+
+    best_mrr = 0
+    best_mrr_epoch = 0
 
     print('train starting...')
     model = DynamicKGE(config).cuda()
@@ -206,7 +214,7 @@ def main():
     criterion = nn.MarginRankingLoss(config.margin, reduction='sum').cuda()
 
     train_start_time = time.time()
-    for epoch in range(config.train_times):
+    for epoch in range(1, config.train_times):
         epoch_start_time = time.time()
         print('----------training the ' + str(epoch) + ' epoch----------')
         model.train()
@@ -218,8 +226,7 @@ def main():
         sample_edges = train_triples[sample_index]
         train_data = generate_graph(sample_edges, config.relation_total)
 
-        device = torch.device('cuda')
-        train_data.to(device)
+        train_data.to(device_cuda)
 
         entity_o, relation_o = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
         score = model.score_loss(entity_o, relation_o, train_data.samples, train_data.labels) + 0.01 * model.reg_loss(entity_o, relation_o)
@@ -239,30 +246,43 @@ def main():
         print('----------epoch loss: ' + str(loss.item()) + ' ----------')
         print('----------epoch training time: ' + str(epoch_end_time-epoch_start_time) + ' s --------\n')
 
+        # validation
+        if epoch % validate_every == 0:
+            model.eval()
+            with torch.no_grad():
+                train_graph.to(device_cuda)
+                entity_o, relation_o = model.forward(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
+                                                     train_graph.edge_norm, train_graph.DAD_rel)
+                train_graph.to(device_cpu)
+                print('validation on validation set starts...')
+                mrr = test.test_link_prediction(valid_triples, entity_o, relation_o, config.norm)
+                print('validation on validation set ends...')
 
+                if mrr > best_mrr:
+                    best_mrr_epoch = epoch
+                    print("better mrr at epoch {}, mrr: {}, best mrr before: {}".format(epoch, mrr, best_mrr))
+                    torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, model_state_file)
 
     print('train ending...')
     train_end_time = time.time()
     print('\nTotal training time: ', train_end_time-train_start_time)
-
-    torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, model_state_file)
 
     print('prepare test data...')
     checkpoint = torch.load(model_state_file)
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
     with torch.no_grad():
-        train_data = generate_graph(config.train_triples, config.relation_total)    # whole train set
-        train_data.to(device)
+        train_graph.to(device_cuda)
         entity_o, relation_o = model.forward(train_data.entity, train_data.edge_index, train_data.edge_type,
                                                          train_data.edge_norm, train_data.DAD_rel)
+        train_graph.to(device_cpu)
 
     print('test link prediction on train set starts...')
-    test.test_link_prediction(config.train_triples[0:100], entity_o, relation_o, config.norm)
+    test.test_link_prediction(train_triples, entity_o, relation_o, config.norm)
     print('test link prediction on train set ends...')
 
     print('test link prediction on test set starts...')
-    test.test_link_prediction(config.test_triples[0:100], entity_o, relation_o, config.norm)
+    test.test_link_prediction(test_triples, entity_o, relation_o, config.norm)
     print('test link prediction on test set ends...')
 
     # test_data = generate_graph(test_triples, config.relation_total)
