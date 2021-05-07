@@ -1,6 +1,7 @@
 import torch
 import os
 from util.test_util import *
+import time
 
 
 def distmult(self, entity_o, relation_o, triplets):
@@ -49,13 +50,15 @@ def test_head(golden_triple, entity_emb, relation_emb, norm):
     # value = predict(head_batch, entity_emb, relation_emb, norm)
     # golden_value = value[golden_triple[0]]
     # li = np.argsort(value)
-    res = 1
-    sub = 0
-    for pos, val in enumerate(scores):
-        if val < golden_score:
-            res += 1
-            # if (pos, golden_triple[1], golden_triple[2]) in train_set:
-            #     sub += 1
+    # res = 1
+    # sub = 0
+    # for pos, val in enumerate(scores):
+    #     if val < golden_score:
+    #         res += 1
+    #         # if (pos, golden_triple[1], golden_triple[2]) in train_set:
+    #         #     sub += 1
+
+    res = torch.count_nonzero(scores < golden_score, axis=0) + 1
     return res
     # return res, res - sub
 
@@ -67,14 +70,15 @@ def test_tail(golden_triple, entity_emb, relation_emb, norm):
     # value = predict(tail_batch, entity_emb, relation_emb, norm)
     # golden_value = value[golden_triple[2]]
     # li = np.argsort(value)
-    res = 1
-    sub = 0
-    for pos, val in enumerate(scores):
-        if val < golden_score:
-            res += 1
-            # if (golden_triple[0], golden_triple[1], pos) in train_set:
-            #     sub += 1
+    # res = 1
+    # sub = 0
+    # for pos, val in enumerate(scores):
+    #     if val < golden_score:
+    #         res += 1
+    #         # if (golden_triple[0], golden_triple[1], pos) in train_set:
+    #         #     sub += 1
 
+    res = torch.count_nonzero(scores < golden_score, axis=0) + 1
     return res
 
 
@@ -99,14 +103,16 @@ def test_link_prediction(test_triples, entity_o, relation_o, norm):
     for i, golden_triple in enumerate(test_triples):
         print('test ---' + str(i) + '--- triple')
         print(i, end="\r")
+        time1 = time.time()
         l_pos = test_head(golden_triple, entity_o, relation_o, norm)
         r_pos = test_tail(golden_triple, entity_o, relation_o, norm)  # position, 1-based
+        time2 = time.time()
 
         print(golden_triple, end=': ')
         print('l_pos=' + str(l_pos), end=', ')
         # print('l_filter_pos=' + str(l_filter_pos), end=', ')
         print('r_pos=' + str(r_pos), end=', ')
-        print('\n')
+        print('time: {}\n'.format(time2-time1))
         # print('r_filter_pos=' + str(r_filter_pos), end='\n')
 
         l_mr += l_pos
@@ -131,10 +137,10 @@ def test_link_prediction(test_triples, entity_o, relation_o, norm):
         # l_mr_filter += l_filter_pos
         # r_mr_filter += r_filter_pos
 
-    l_mr /= test_total
-    r_mr /= test_total
-    l_mrr /= test_total
-    r_mrr /= test_total
+    l_mr = float(l_mr)/test_total
+    r_mr = float(r_mr) / test_total
+    l_mrr = float(l_mrr) / test_total
+    r_mrr = float(r_mrr) / test_total
 
     l_hit1_ratio = float(l_hit1)/test_total
     l_hit3_ratio = float(l_hit3)/test_total
@@ -160,6 +166,7 @@ def test_link_prediction(test_triples, entity_o, relation_o, norm):
 
 if __name__ == "__main__":
     online = False
+    device = torch.device('cuda')
     with torch.no_grad():
         if not online:
             # from config import config
@@ -171,13 +178,12 @@ if __name__ == "__main__":
             checkpoint = torch.load(config.model_state_file)
             model.load_state_dict(checkpoint['state_dict'])
             model.eval()
-            device = torch.device('cuda')
 
-            train_data = generate_graph(config.train_triples[0:10000], config.relation_total)
+            train_data = generate_graph(config.train_triples, config.relation_total)
             train_data.to(device)
             entity_o, relation_o = model.forward(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
 
-            test_link_prediction(train_data.relabeled_edges[0:100], entity_o, relation_o, config.norm)
+            test_link_prediction(config.test_triples, entity_o, relation_o, config.norm)
 
             # test_data = generate_graph(config.test_triples, config.relation_total)
             # test_data.to(device)
@@ -202,7 +208,6 @@ if __name__ == "__main__":
             checkpoint = torch.load(config.model_state_file)
             model.load_state_dict(checkpoint['state_dict'])
             model.eval()
-            device = torch.device('cuda')
 
             test_data = generate_graph(config.test_triples, config.relation_total)
             test_data.to(device)
