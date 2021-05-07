@@ -3,11 +3,21 @@ import os
 from util.test_util import *
 
 
+def distmult(self, entity_o, relation_o, triplets):
+    s = entity_o[triplets[:, 0]]
+    r = relation_o[triplets[:, 1]]
+    o = entity_o[triplets[:, 2]]
+    score = torch.sum(s * r * o, dim=1)
+
+    return score
+
 def cal_score(entity_o, relation_o, triplets, norm):
     h = entity_o[triplets[:, 0]]
     r = relation_o[triplets[:, 1]]
     t = entity_o[triplets[:, 2]]
     score = torch.norm(h + r - t, p=norm, dim=1)
+
+    # score = distmult(entity_o, relation_o, triplets)
 
     return score
 
@@ -163,15 +173,9 @@ if __name__ == "__main__":
 
             train_data = generate_graph(config.train_triples[0:10000], config.relation_total)
             train_data.to(device)
-            entity_context, relation_context = model.forward(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
-            entity_embedding = model.entity_emb(torch.from_numpy(train_data.uniq_entity).long().cuda())
-            relation_embedding = model.relation_emb.weight
-            entity_o = torch.mul(torch.sigmoid(model.gate_entity), entity_embedding) + torch.mul(
-                1 - torch.sigmoid(model.gate_entity), entity_context)
-            relation_o = torch.mul(torch.sigmoid(model.gate_relation), relation_embedding) + torch.mul(
-                1 - torch.sigmoid(model.gate_relation), relation_context)
+            entity_o, relation_o = model.forward(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
 
-            test_link_prediction(train_data.relabeled_edges[0:500], entity_o, relation_o, config.norm)
+            test_link_prediction(train_data.relabeled_edges[0:100], entity_o, relation_o, config.norm)
 
             # test_data = generate_graph(config.test_triples, config.relation_total)
             # test_data.to(device)

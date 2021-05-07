@@ -152,8 +152,8 @@ class DynamicKGE(nn.Module):
 
         # score = self.distmult(entity_o, relation_o, triplets)
         score = torch.norm(h + r - t, p=config.norm, dim=1)
-
-        return F.binary_cross_entropy_with_logits(score, target)
+        return score
+        # return F.binary_cross_entropy_with_logits(score, target)
 
     def reg_loss(self, entity_o, relation_o):
         return torch.mean(entity_o.pow(2)) + torch.mean(relation_o.pow(2))
@@ -167,29 +167,16 @@ class DynamicKGE(nn.Module):
         # rgcn
         entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
         # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
-        entity_context = F.relu(self.conv2(entity_context, edge_index, edge_type, edge_norm))
+        entity_context = self.conv2(entity_context, edge_index, edge_type, edge_norm)
         # gcn
         relation_context = torch.matmul(DAD_rel, relation_context)
-        relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
+        relation_context = torch.matmul(relation_context, self.relation_gcn_weight)
 
         # calculate joint embedding
         entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
         relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
 
         return entity_o, relation_o
-
-    def forward_test(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
-        entity_context = self.entity_context(entity.long())
-        relation_context = self.relation_context.weight
-
-        entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
-        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
-        entity_context = F.relu(self.conv2(entity_context, edge_index, edge_type, edge_norm))
-
-        relation_context = torch.matmul(DAD_rel, relation_context)
-        relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
-
-        return entity_context, relation_context
 
 def main():
     train_triples = config.train_triples
@@ -235,14 +222,14 @@ def main():
         train_data.to(device)
 
         entity_o, relation_o = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
-        loss = model.score_loss(entity_o, relation_o, train_data.samples, train_data.labels) + 0.01 * model.reg_loss(entity_o, relation_o)
+        score = model.score_loss(entity_o, relation_o, train_data.samples, train_data.labels) + 0.01 * model.reg_loss(entity_o, relation_o)
 
         # # score for loss
         # p_scores = model._calc(head_o[0:train_data.samples.size()[0]//2], tail_o[0:train_data.samples.size()[0]//2], rel_o[0:train_data.samples.size()[0]//2])
         # n_scores = model._calc(head_o[train_data.samples.size()[0]//2:], tail_o[train_data.samples.size()[0]//2:], rel_o[train_data.samples.size()[0]//2:])
         #
-        # y = torch.Tensor([-1]*sample_size).cuda()
-        # loss = criterion(p_scores, n_scores, y)
+        y = torch.Tensor([-1]*sample_size).cuda()
+        loss = criterion(score[:len(score)//2], score[len(score)//2:], y)
 
         loss.backward()
         optimizer.step()
@@ -268,9 +255,13 @@ def main():
         entity_o, relation_o = model.forward(train_data.entity, train_data.edge_index, train_data.edge_type,
                                                          train_data.edge_norm, train_data.DAD_rel)
 
-    print('test link prediction starts...')
+    print('test link prediction on train set starts...')
+    test.test_link_prediction(config.train_triples[0:100], entity_o, relation_o, config.norm)
+    print('test link prediction on train set ends...')
+
+    print('test link prediction on test set starts...')
     test.test_link_prediction(config.test_triples[0:100], entity_o, relation_o, config.norm)
-    print('test link prediction ends...')
+    print('test link prediction on test set ends...')
 
     # test_data = generate_graph(test_triples, config.relation_total)
     # test_data.to(device)
