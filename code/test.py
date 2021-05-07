@@ -101,18 +101,15 @@ def test_link_prediction(test_triples, entity_o, relation_o, norm):
     r_hit10 = 0
 
     for i, golden_triple in enumerate(test_triples):
-        print('test ---' + str(i) + '--- triple')
-        print(i, end="\r")
-        time1 = time.time()
+        # print('test ---' + str(i) + '--- triple')
+        # print(i, end="\r")
         l_pos = test_head(golden_triple, entity_o, relation_o, norm)
         r_pos = test_tail(golden_triple, entity_o, relation_o, norm)  # position, 1-based
-        time2 = time.time()
 
-        print(golden_triple, end=': ')
-        print('l_pos=' + str(l_pos), end=', ')
+        # print(golden_triple, end=': ')
+        # print('l_pos=' + str(l_pos), end=', ')
         # print('l_filter_pos=' + str(l_filter_pos), end=', ')
-        print('r_pos=' + str(r_pos), end=', ')
-        print('time: {}\n'.format(time2-time1))
+        # print('r_pos=' + str(r_pos), end=', ')
         # print('r_filter_pos=' + str(r_filter_pos), end='\n')
 
         l_mr += l_pos
