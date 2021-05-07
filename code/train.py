@@ -160,9 +160,9 @@ class DynamicKGE(nn.Module):
 
     def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
         entity_emb = self.entity_emb(entity.long())
-        relation_emb = self.relation_emb.weight.data
+        relation_emb = self.relation_emb.weight
         entity_context = self.entity_context(entity.long())
-        relation_context = self.relation_context.weight.data
+        relation_context = self.relation_context.weight
 
         # rgcn
         entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
@@ -238,6 +238,8 @@ def main():
         epoch_end_time = time.time()
         print('----------epoch loss: ' + str(loss.item()) + ' ----------')
         print('----------epoch training time: ' + str(epoch_end_time-epoch_start_time) + ' s --------\n')
+
+
 
     print('train ending...')
     train_end_time = time.time()

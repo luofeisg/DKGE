@@ -85,7 +85,7 @@ class RGCNConv(MessagePassing):
             out = torch.index_select(w, 0, index)
         else:
             w = w.view(self.num_relations, self.in_channels, self.out_channels)
-            if edge_type.shape[0] > 3000:  # prevent memory overflow, only for testing temporarily
+            if edge_type.shape[0] > 100000:  # prevent memory overflow, only for testing temporarily
                 with torch.no_grad():
                     batch_size = 3000
                     batches = math.ceil(edge_type.shape[0]/batch_size)
