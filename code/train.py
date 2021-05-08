@@ -161,22 +161,28 @@ class DynamicKGE(nn.Module):
     def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
         entity_emb = self.entity_emb(entity.long())
         relation_emb = self.relation_emb.weight
-        entity_context = self.entity_context(entity.long())
-        relation_context = self.relation_context.weight
 
-        # rgcn
-        entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
-        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
-        entity_context = self.conv2(entity_context, edge_index, edge_type, edge_norm)
-        # gcn
-        relation_context = torch.matmul(DAD_rel, relation_context)
-        relation_context = torch.matmul(relation_context, self.relation_gcn_weight)
+        return entity_emb, relation_emb
 
-        # calculate joint embedding
-        entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
-        relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
 
-        return entity_o, relation_o
+        # entity_emb = self.entity_emb(entity.long())
+        # relation_emb = self.relation_emb.weight
+        # entity_context = self.entity_context(entity.long())
+        # relation_context = self.relation_context.weight
+        #
+        # # rgcn
+        # entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
+        # # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        # entity_context = self.conv2(entity_context, edge_index, edge_type, edge_norm)
+        # # gcn
+        # relation_context = torch.matmul(DAD_rel, relation_context)
+        # relation_context = torch.matmul(relation_context, self.relation_gcn_weight)
+        #
+        # # calculate joint embedding
+        # entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
+        # relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
+        #
+        # return entity_o, relation_o
 
 def main():
     train_triples = config.train_triples
@@ -214,7 +220,7 @@ def main():
     criterion = nn.MarginRankingLoss(config.margin, reduction='sum').cuda()
 
     train_start_time = time.time()
-    for epoch in range(1, config.train_times):
+    for epoch in range(1, config.train_times+1):
         epoch_start_time = time.time()
         print('----------training the ' + str(epoch) + ' epoch----------')
         model.train()
@@ -249,19 +255,27 @@ def main():
         if epoch % validate_every == 0:
             model.eval()
             with torch.no_grad():
-                train_graph.to(device_cuda)
-                entity_o, relation_o = model.forward(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
-                                                     train_graph.edge_norm, train_graph.DAD_rel)
-                train_graph.to(device_cpu)
+                # train_graph.to(device_cuda)
+                # entity_o, relation_o = model.forward(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
+                #                                      train_graph.edge_norm, train_graph.DAD_rel)
+                # train_graph.to(device_cpu)
+
+                # train_graph = generate_graph(train_triples, config.relation_total)
+                # train_graph.to(device_cuda)
+                # entity_o, relation_o = model(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
+                #                                      train_graph.edge_norm, train_graph.DAD_rel)
+
+                entity_o = model.entity_emb.weight.data
+                relation_o = model.relation_emb.weight.data
 
                 print('validate link prediction on train set starts...')
                 index = np.random.choice(train_triples.shape[0], 1000)
                 mrr = test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
                 print('valid link prediction on train set ends...')
 
-                # print('validation on validation set starts...')
-                # mrr = test.test_link_prediction(valid_triples, entity_o, relation_o, config.norm)
-                # print('validation on validation set ends...')
+                print('validation on validation set starts...')
+                mrr = test.test_link_prediction(valid_triples, entity_o, relation_o, config.norm)
+                print('validation on validation set ends...')
 
                 if mrr > best_mrr:
                     best_mrr_epoch = epoch
@@ -277,10 +291,13 @@ def main():
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
     with torch.no_grad():
-        train_graph.to(device_cuda)
-        entity_o, relation_o = model.forward(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
-                                                         train_graph.edge_norm, train_graph.DAD_rel)
-        train_graph.to(device_cpu)
+        # train_graph.to(device_cuda)
+        # entity_o, relation_o = model.forward(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
+        #                                                  train_graph.edge_norm, train_graph.DAD_rel)
+        # train_graph.to(device_cpu)
+
+        entity_o = model.entity_emb.weight.data
+        relation_o = model.relation_emb.weight.data
 
         print('test link prediction on train set starts...')
         index = np.random.choice(train_triples.shape[0], 1000)
