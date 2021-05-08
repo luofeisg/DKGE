@@ -17,7 +17,9 @@ class DynamicKGE(nn.Module):
         super(DynamicKGE, self).__init__()
 
         self.entity_emb = nn.Embedding(config.entity_total, config.dim)
-        self.relation_emb = nn.Embedding(config.relation_total, config.dim)
+        self.relation_emb = nn.Parameter(torch.Tensor(config.relation_total, config.dim))
+        nn.init.xavier_uniform_(self.relation_emb, gain=nn.init.calculate_gain('relu'))
+        # self.relation_emb = nn.Embedding(config.relation_total, config.dim)
 
         self.entity_context = nn.Embedding(config.entity_total, config.dim)
         self.relation_context = nn.Embedding(config.relation_total, config.dim)
@@ -30,9 +32,6 @@ class DynamicKGE(nn.Module):
         self.gate_entity = nn.Parameter(torch.Tensor(config.dim))
         self.gate_relation = nn.Parameter(torch.Tensor(config.dim))
 
-        self.v_ent = nn.Parameter(torch.Tensor(config.dim))
-        self.v_rel = nn.Parameter(torch.Tensor(config.dim))
-
         self.conv1 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
         self.conv2 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
 
@@ -41,8 +40,6 @@ class DynamicKGE(nn.Module):
     def _init_parameters(self):
         nn.init.uniform_(self.gate_entity.data)
         nn.init.uniform_(self.gate_relation.data)
-        nn.init.uniform_(self.v_ent.data)
-        nn.init.uniform_(self.v_rel.data)
 
         stdv = 1. / math.sqrt(self.relation_gcn_weight.size(1))
         self.relation_gcn_weight.data.uniform_(-stdv, stdv)
@@ -146,21 +143,25 @@ class DynamicKGE(nn.Module):
         return score
 
     def score_loss(self, entity_o, relation_o, triplets, target):
-        h = entity_o[triplets[:, 0]]
-        r = relation_o[triplets[:, 1]]
-        t = entity_o[triplets[:, 2]]
+        # h = entity_o[triplets[:, 0]]
+        # r = relation_o[triplets[:, 1]]
+        # t = entity_o[triplets[:, 2]]
 
-        # score = self.distmult(entity_o, relation_o, triplets)
-        score = torch.norm(h + r - t, p=config.norm, dim=1)
-        return score
-        # return F.binary_cross_entropy_with_logits(score, target)
+        score = self.distmult(entity_o, relation_o, triplets)
+        return F.binary_cross_entropy_with_logits(score, target)
+        # score = torch.norm(h + r - t, p=config.norm, dim=1)
+        # return score
 
     def reg_loss(self, entity_o, relation_o):
         return torch.mean(entity_o.pow(2)) + torch.mean(relation_o.pow(2))
 
     def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
         entity_emb = self.entity_emb(entity.long())
-        relation_emb = self.relation_emb.weight
+        relation_emb = self.relation_emb
+
+        entity_emb = F.relu(self.conv1(entity_emb, edge_index, edge_type, edge_norm))
+        entity_emb = F.dropout(entity_emb, p=0.2, training=self.training)
+        entity_emb = self.conv2(entity_emb, edge_index, edge_type, edge_norm)
 
         return entity_emb, relation_emb
 
@@ -234,14 +235,14 @@ def main():
         train_data.to(device_cuda)
 
         entity_o, relation_o = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
-        score = model.score_loss(entity_o, relation_o, train_data.samples, train_data.labels) + 0.01 * model.reg_loss(entity_o, relation_o)
+        loss = model.score_loss(entity_o, relation_o, train_data.samples, train_data.labels) + 0.01 * model.reg_loss(entity_o, relation_o)
 
         # # score for loss
         # p_scores = model._calc(head_o[0:train_data.samples.size()[0]//2], tail_o[0:train_data.samples.size()[0]//2], rel_o[0:train_data.samples.size()[0]//2])
         # n_scores = model._calc(head_o[train_data.samples.size()[0]//2:], tail_o[train_data.samples.size()[0]//2:], rel_o[train_data.samples.size()[0]//2:])
-        #
-        y = torch.Tensor([-1]*sample_size).cuda()
-        loss = criterion(score[:len(score)//2], score[len(score)//2:], y)
+
+        # y = torch.Tensor([-1]*sample_size).cuda()
+        # loss = criterion(score[:len(score)//2], score[len(score)//2:], y)
 
         loss.backward()
         optimizer.step()
@@ -260,13 +261,10 @@ def main():
                 #                                      train_graph.edge_norm, train_graph.DAD_rel)
                 # train_graph.to(device_cpu)
 
-                # train_graph = generate_graph(train_triples, config.relation_total)
-                # train_graph.to(device_cuda)
-                # entity_o, relation_o = model(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
-                #                                      train_graph.edge_norm, train_graph.DAD_rel)
-
-                entity_o = model.entity_emb.weight.data
-                relation_o = model.relation_emb.weight.data
+                train_graph = generate_graph(train_triples, config.relation_total)
+                train_graph.to(device_cuda)
+                entity_o, relation_o = model(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
+                                                     train_graph.edge_norm, train_graph.DAD_rel)
 
                 print('validate link prediction on train set starts...')
                 index = np.random.choice(train_triples.shape[0], 1000)
