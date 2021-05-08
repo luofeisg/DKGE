@@ -221,8 +221,7 @@ def main():
         optimizer.zero_grad()
 
         # sample from whole graph
-        all_edges = np.arange(len(train_triples))
-        sample_index = np.random.choice(all_edges, sample_size, replace=False)
+        sample_index = np.random.choice(len(train_triples), sample_size, replace=False)
         sample_edges = train_triples[sample_index]
         train_data = generate_graph(sample_edges, config.relation_total)
 
@@ -254,9 +253,15 @@ def main():
                 entity_o, relation_o = model.forward(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
                                                      train_graph.edge_norm, train_graph.DAD_rel)
                 train_graph.to(device_cpu)
-                print('validation on validation set starts...')
-                mrr = test.test_link_prediction(valid_triples, entity_o, relation_o, config.norm)
-                print('validation on validation set ends...')
+
+                print('validate link prediction on train set starts...')
+                index = np.random.choice(train_triples.shape[0], 1000)
+                mrr = test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
+                print('valid link prediction on train set ends...')
+
+                # print('validation on validation set starts...')
+                # mrr = test.test_link_prediction(valid_triples, entity_o, relation_o, config.norm)
+                # print('validation on validation set ends...')
 
                 if mrr > best_mrr:
                     best_mrr_epoch = epoch
@@ -278,7 +283,7 @@ def main():
         train_graph.to(device_cpu)
 
         print('test link prediction on train set starts...')
-        index = np.random.choice(train_triples.shape[0], 3000)
+        index = np.random.choice(train_triples.shape[0], 1000)
         test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
         print('test link prediction on train set ends...')
 
