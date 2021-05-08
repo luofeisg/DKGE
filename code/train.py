@@ -273,17 +273,18 @@ def main():
     model.eval()
     with torch.no_grad():
         train_graph.to(device_cuda)
-        entity_o, relation_o = model.forward(train_data.entity, train_data.edge_index, train_data.edge_type,
-                                                         train_data.edge_norm, train_data.DAD_rel)
+        entity_o, relation_o = model.forward(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
+                                                         train_graph.edge_norm, train_graph.DAD_rel)
         train_graph.to(device_cpu)
 
-    print('test link prediction on train set starts...')
-    test.test_link_prediction(train_triples, entity_o, relation_o, config.norm)
-    print('test link prediction on train set ends...')
+        print('test link prediction on train set starts...')
+        index = np.random.choice(train_triples.shape[0], 3000)
+        test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
+        print('test link prediction on train set ends...')
 
-    print('test link prediction on test set starts...')
-    test.test_link_prediction(test_triples, entity_o, relation_o, config.norm)
-    print('test link prediction on test set ends...')
+        print('test link prediction on test set starts...')
+        test.test_link_prediction(test_triples, entity_o, relation_o, config.norm)
+        print('test link prediction on test set ends...')
 
     # test_data = generate_graph(test_triples, config.relation_total)
     # test_data.to(device)

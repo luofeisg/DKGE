@@ -176,9 +176,9 @@ if __name__ == "__main__":
             model.load_state_dict(checkpoint['state_dict'])
             model.eval()
 
-            train_data = generate_graph(config.train_triples, config.relation_total)
-            train_data.to(device)
-            entity_o, relation_o = model.forward(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel)
+            train_graph = generate_graph(config.train_triples, config.relation_total)
+            train_graph.to(device)
+            entity_o, relation_o = model.forward(train_graph.entity, train_graph.edge_index, train_graph.edge_type, train_graph.edge_norm, train_graph.DAD_rel)
 
             test_link_prediction(config.test_triples, entity_o, relation_o, config.norm)
 
