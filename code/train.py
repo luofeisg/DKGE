@@ -84,12 +84,12 @@ class DynamicKGE(nn.Module):
         relation_context = self.relation_context.weight
 
         # rgcn
-        entity_context = self.conv1(entity_context, edge_index, edge_type, edge_norm)
+        entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
         # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
         # entity_context = self.conv2(entity_context, edge_index, edge_type, edge_norm)
         # gcn
         relation_context = torch.matmul(DAD_rel, relation_context)
-        relation_context = torch.matmul(relation_context, self.relation_gcn_weight)
+        relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
 
         # calculate joint embedding
         entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
