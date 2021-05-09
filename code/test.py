@@ -13,12 +13,12 @@ def distmult(entity_o, relation_o, triplets):
     return score
 
 def cal_score(entity_o, relation_o, triplets, norm):
-    # h = entity_o[triplets[:, 0]]
-    # r = relation_o[triplets[:, 1]]
-    # t = entity_o[triplets[:, 2]]
-    # score = torch.norm(h + r - t, p=norm, dim=1)
+    h = entity_o[triplets[:, 0]]
+    r = relation_o[triplets[:, 1]]
+    t = entity_o[triplets[:, 2]]
+    score = torch.norm(h + r - t, p=norm, dim=1)
 
-    score = distmult(entity_o, relation_o, triplets)
+    # score = distmult(entity_o, relation_o, triplets)
 
     return score
 
@@ -58,7 +58,7 @@ def test_head(golden_triple, entity_emb, relation_emb, norm):
     #         # if (pos, golden_triple[1], golden_triple[2]) in train_set:
     #         #     sub += 1
 
-    res = torch.count_nonzero(scores > golden_score, axis=0) + 1
+    res = torch.count_nonzero(scores < golden_score, axis=0) + 1
     return res
     # return res, res - sub
 
@@ -78,7 +78,7 @@ def test_tail(golden_triple, entity_emb, relation_emb, norm):
     #         # if (golden_triple[0], golden_triple[1], pos) in train_set:
     #         #     sub += 1
 
-    res = torch.count_nonzero(scores > golden_score, axis=0) + 1
+    res = torch.count_nonzero(scores < golden_score, axis=0) + 1
     return res
 
 

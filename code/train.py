@@ -15,10 +15,11 @@ from util.train_util import *
 class DynamicKGE(nn.Module):
     def __init__(self, config):
         super(DynamicKGE, self).__init__()
-
-        self.entity_emb = nn.Embedding(config.entity_total, config.dim)
+        self.entity_emb = nn.Parameter(torch.Tensor(config.entity_total, config.dim))
         self.relation_emb = nn.Parameter(torch.Tensor(config.relation_total, config.dim))
+        nn.init.xavier_uniform_(self.entity_emb, gain=nn.init.calculate_gain('relu'))
         nn.init.xavier_uniform_(self.relation_emb, gain=nn.init.calculate_gain('relu'))
+        # self.entity_emb = nn.Embedding(config.entity_total, config.dim)
         # self.relation_emb = nn.Embedding(config.relation_total, config.dim)
 
         self.entity_context = nn.Embedding(config.entity_total, config.dim)
@@ -64,47 +65,47 @@ class DynamicKGE(nn.Module):
         return score
 
     def score_loss(self, entity_o, relation_o, triplets, target):
-        # h = entity_o[triplets[:, 0]]
-        # r = relation_o[triplets[:, 1]]
-        # t = entity_o[triplets[:, 2]]
+        h = entity_o[triplets[:, 0]]
+        r = relation_o[triplets[:, 1]]
+        t = entity_o[triplets[:, 2]]
 
-        score = self.distmult(entity_o, relation_o, triplets)
-        return F.binary_cross_entropy_with_logits(score, target)
-        # score = torch.norm(h + r - t, p=config.norm, dim=1)
-        # return score
+        # score = self.distmult(entity_o, relation_o, triplets)
+        # return F.binary_cross_entropy_with_logits(score, target)
+        score = torch.norm(h + r - t, p=config.norm, dim=1)
+        return score
 
     def reg_loss(self, entity_o, relation_o):
         return torch.mean(entity_o.pow(2)) + torch.mean(relation_o.pow(2))
 
     def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
-        entity_emb = self.entity_emb(entity.long())
+        entity_emb = self.entity_emb[entity.long()]
         relation_emb = self.relation_emb
+        entity_context = self.entity_context(entity.long())
+        relation_context = self.relation_context.weight
 
-        entity_emb = F.relu(self.conv1(entity_emb, edge_index, edge_type, edge_norm))
-        entity_emb = F.dropout(entity_emb, p=0.2, training=self.training)
-        entity_emb = self.conv2(entity_emb, edge_index, edge_type, edge_norm)
-
-        return entity_emb, relation_emb
-
-
-        # entity_emb = self.entity_emb(entity.long())
-        # relation_emb = self.relation_emb.weight
-        # entity_context = self.entity_context(entity.long())
-        # relation_context = self.relation_context.weight
-        #
-        # # rgcn
-        # entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
-        # # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        # rgcn
+        entity_context = self.conv1(entity_context, edge_index, edge_type, edge_norm)
+        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
         # entity_context = self.conv2(entity_context, edge_index, edge_type, edge_norm)
-        # # gcn
-        # relation_context = torch.matmul(DAD_rel, relation_context)
-        # relation_context = torch.matmul(relation_context, self.relation_gcn_weight)
+        # gcn
+        relation_context = torch.matmul(DAD_rel, relation_context)
+        relation_context = torch.matmul(relation_context, self.relation_gcn_weight)
+
+        # calculate joint embedding
+        entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
+        relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
+
+        return entity_o, relation_o
+
+        # pure RGCN
+        # entity_emb = self.entity_emb(entity.long())
+        # relation_emb = self.relation_emb
         #
-        # # calculate joint embedding
-        # entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
-        # relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
+        # entity_emb = F.relu(self.conv1(entity_emb, edge_index, edge_type, edge_norm))
+        # entity_emb = F.dropout(entity_emb, p=0.2, training=self.training)
+        # entity_emb = self.conv2(entity_emb, edge_index, edge_type, edge_norm)
         #
-        # return entity_o, relation_o
+        # return entity_emb, relation_emb
 
 def main():
     train_triples = config.train_triples
@@ -161,8 +162,8 @@ def main():
         # p_scores = model._calc(head_o[0:train_data.samples.size()[0]//2], tail_o[0:train_data.samples.size()[0]//2], rel_o[0:train_data.samples.size()[0]//2])
         # n_scores = model._calc(head_o[train_data.samples.size()[0]//2:], tail_o[train_data.samples.size()[0]//2:], rel_o[train_data.samples.size()[0]//2:])
 
-        # y = torch.Tensor([-1]*sample_size).cuda()
-        # loss = criterion(score[:len(score)//2], score[len(score)//2:], y)
+        y = torch.Tensor([-1]*sample_size).cuda()
+        loss = criterion(loss[:len(loss)//2], loss[len(loss)//2:], y)
 
         loss.backward()
         optimizer.step()
@@ -214,8 +215,10 @@ def main():
         #                                                  train_graph.edge_norm, train_graph.DAD_rel)
         # train_graph.to(device_cpu)
 
-        entity_o = model.entity_emb.weight.data
-        relation_o = model.relation_emb.weight.data
+        train_graph = generate_graph(train_triples, config.relation_total)
+        train_graph.to(device_cuda)
+        entity_o, relation_o = model(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
+                                     train_graph.edge_norm, train_graph.DAD_rel)
 
         print('test link prediction on train set starts...')
         index = np.random.choice(train_triples.shape[0], 1000)
