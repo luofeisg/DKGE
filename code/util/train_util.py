@@ -185,6 +185,14 @@ def generate_graph(triples, relation_total):
     samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), negative_rate=1)
     samples = torch.from_numpy(samples)
 
+    # further split graph, only half of the edges will be used as graph
+    # structure, while the rest half is used as unseen positive samples
+    split_size = int(triples.shape[0] * 0.5)
+    graph_split_ids = np.random.choice(np.arange(triples.shape[0]), size=split_size, replace=False)
+    head = head[graph_split_ids]
+    tail = tail[graph_split_ids]
+    rel = rel[graph_split_ids]
+
     head = torch.tensor(head, dtype=torch.long)
     tail = torch.tensor(tail, dtype=torch.long)
     rel = torch.tensor(rel, dtype=torch.long)
@@ -199,11 +207,12 @@ def generate_graph(triples, relation_total):
     data.entity = torch.from_numpy(uniq_entity)
     data.edge_type = edge_type
     data.edge_norm = edge_norm
-    data.samples = samples
-    data.labels = torch.from_numpy(labels)
     data.DAD_rel = DAD_rel
     data.uniq_entity = uniq_entity
     data.relabeled_edges = relabeled_edges
+    data.samples = samples
+    data.labels = torch.from_numpy(labels)
+
     return data
 
 

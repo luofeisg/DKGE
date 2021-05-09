@@ -47,53 +47,6 @@ class DynamicKGE(nn.Module):
     def _calc(self, h, t, r):
         return torch.norm(h + r - t, p=config.norm, dim=1)
 
-    def get_entity_context(self, entities):
-        entities_context = []
-        for e in entities:
-            entities_context.extend(config.entity_adj_table.get(int(e), [config.entity_total] * config.max_context_num))
-        # return entities_context
-        return torch.LongTensor(entities_context).cuda()
-
-    def get_relation_context(self, relations):
-        relations_context = []
-        for r in relations:
-            relations_context.extend(
-                config.relation_adj_table.get(int(r), [config.relation_total] * 2 * config.max_context_num))
-        # return relations_context
-        return torch.LongTensor(relations_context).cuda()
-
-    def get_adj_entity_vec(self, entity_vec_list, adj_entity_list):
-        # adj_entity_vec_list = self.entity_context[adj_entity_list]
-        adj_entity_vec_list = self.entity_context(adj_entity_list)
-        adj_entity_vec_list = adj_entity_vec_list.view(-1, config.max_context_num, config.dim)
-
-        return torch.cat((entity_vec_list.unsqueeze(1), adj_entity_vec_list), dim=1)
-
-    def get_adj_relation_vec(self, relation_vec_list, adj_relation_list):
-        # adj_relation_vec_list = self.relation_context[adj_relation_list]
-        adj_relation_vec_list = self.relation_context(adj_relation_list)
-        adj_relation_vec_list = adj_relation_vec_list.view(-1, config.max_context_num, 2,
-                                                           config.dim).cuda()
-        adj_relation_vec_list = torch.sum(adj_relation_vec_list, dim=2)
-
-        return torch.cat((relation_vec_list.unsqueeze(1), adj_relation_vec_list), dim=1)
-
-    def score(self, o, adj_vec_list, target='entity'):
-        os = torch.cat(tuple([o] * (config.max_context_num+1)), dim=1).reshape(-1, config.max_context_num+1, config.dim)
-        tmp = F.relu(torch.mul(adj_vec_list, os), inplace=False)  # batch x max x 2dim
-        if target == 'entity':
-            score = torch.matmul(tmp, self.v_ent)  # batch x max
-        else:
-            score = torch.matmul(tmp, self.v_rel)
-        return score
-
-    def calc_subgraph_vec(self, o, adj_vec_list, target="entity"):
-        alpha = self.score(o, adj_vec_list, target)
-        alpha = F.softmax(alpha)
-
-        sg = torch.sum(torch.mul(torch.unsqueeze(alpha, dim=2), adj_vec_list), dim=1)  # batch x dim
-        return sg
-
     def gcn(self, A, H, target='entity'):
         support = torch.matmul(A, H)
         if target == 'entity':
@@ -101,38 +54,6 @@ class DynamicKGE(nn.Module):
         elif target == 'relation':
             output = F.relu(torch.matmul(support, self.relation_gcn_weight))
         return output
-
-    def save_parameters(self, parameter_path):
-        if not os.path.exists(parameter_path):
-            os.makedirs(parameter_path)
-
-        ent_f = open(os.path.join(parameter_path, 'entity_o'), "w")
-        ent_f.write(json.dumps(self.pht_o))
-        ent_f.close()
-
-        rel_f = open(os.path.join(parameter_path, 'relation_o'), "w")
-        rel_f.write(json.dumps(self.pr_o))
-        rel_f.close()
-
-        para2vec = {}
-        lists = self.state_dict()
-        for var_name in lists:
-            para2vec[var_name] = lists[var_name].cpu().numpy().tolist()
-
-        f = open(os.path.join(parameter_path, 'all_parameters'), "w")
-        f.write(json.dumps(para2vec))
-        f.close()
-
-    def save_phrt_o(self, pos_h, pos_r, pos_t, ph_o, pr_o, pt_o):
-        for i in range(len(pos_h)):
-            h = str(int(pos_h[i]))
-            self.pht_o[h] = ph_o[i].detach().cpu().numpy().tolist()
-
-            t = str(int(pos_t[i]))
-            self.pht_o[t] = pt_o[i].detach().cpu().numpy().tolist()
-
-            r = str(int(pos_r[i]))
-            self.pr_o[r] = pr_o[i].detach().cpu().numpy().tolist()
 
     def distmult(self, entity_o, relation_o, triplets):
         s = entity_o[triplets[:, 0]]
@@ -195,7 +116,6 @@ def main():
     num_rels = config.relation_total
     model_state_file = config.model_state_file
 
-    train_graph = generate_graph(train_triples, config.relation_total)
     device_cuda = torch.device('cuda')
     device_cpu = torch.device('cpu')
 
@@ -246,7 +166,7 @@ def main():
 
         loss.backward()
         optimizer.step()
-        torch.cuda.empty_cache()
+        # torch.cuda.empty_cache()
 
         epoch_end_time = time.time()
         print('----------epoch loss: ' + str(loss.item()) + ' ----------')
