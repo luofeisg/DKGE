@@ -4,9 +4,9 @@ import collections
 import torch
 import torch.nn as nn
 
-nums = [11, 22, 33, 44, 55]
-nums = set(nums)
-for index, number in enumerate(nums):
-    print(index, number)
+a = torch.tensor([[10, 10, 10], [1, 1, 1], [0.1, 0.1, 0.1], [0.01, 0.01, 0.01]])
+index = torch.tensor([[2, 1, 2, 0]])
+result = torch.zeros(5, 5)
+result.scatter_add_(1, index, a)
 
 print()

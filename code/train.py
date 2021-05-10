@@ -1,8 +1,4 @@
 import time
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 
 import test
@@ -83,13 +79,15 @@ class DynamicKGE(nn.Module):
         entity_context = self.entity_context(entity.long())
         relation_context = self.relation_context.weight
 
+        num_entity = entity.shape[0]
+
         # rgcn
-        entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
+        entity_context = self.conv1(entity_context, edge_index, edge_type, edge_norm, node_dim=num_entity)
         # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
         # entity_context = self.conv2(entity_context, edge_index, edge_type, edge_norm)
         # gcn
         relation_context = torch.matmul(DAD_rel, relation_context)
-        relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
+        relation_context = torch.matmul(relation_context, self.relation_gcn_weight)
 
         # calculate joint embedding
         entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
@@ -204,6 +202,7 @@ def main():
     print('train ending...')
     train_end_time = time.time()
     print('\nTotal training time: ', train_end_time-train_start_time)
+    print("best parameter at epoch {}".format(best_mrr_epoch))
 
     print('prepare test data...')
     checkpoint = torch.load(model_state_file)

@@ -4,11 +4,301 @@ import torch.nn as nn
 import numpy as np
 import math
 import torch.nn.functional as F
-from torch_geometric.nn.conv import MessagePassing
-from torch_scatter import scatter_add
-from torch_geometric.data import Data
+from typing import Optional
 
-class RGCNConv(MessagePassing):
+def scatter(src: torch.Tensor, index: torch.Tensor, dim: int = -1,
+            out: Optional[torch.Tensor] = None, dim_size: Optional[int] = None,
+            reduce: str = "sum") -> torch.Tensor:
+    if reduce == 'sum' or reduce == 'add':
+        return scatter_sum(src, index, dim, out, dim_size)
+    else:
+        raise ValueError
+
+
+def broadcast(src: torch.Tensor, other: torch.Tensor, dim: int):
+    if dim < 0:
+        dim = other.dim() + dim
+    if src.dim() == 1:
+        for _ in range(0, dim):
+            src = src.unsqueeze(0)
+    for _ in range(src.dim(), other.dim()):
+        src = src.unsqueeze(-1)
+    src = src.expand_as(other)
+    return src
+
+
+def scatter_sum(src: torch.Tensor, index: torch.Tensor, dim: int = -1,
+                out: Optional[torch.Tensor] = None,
+                dim_size: Optional[int] = None) -> torch.Tensor:
+    index = broadcast(index, src, dim)
+    if out is None:
+        size = list(src.size())
+        if dim_size is not None:
+            size[dim] = dim_size
+        elif index.numel() == 0:
+            size[dim] = 0
+        else:
+            size[dim] = int(index.max()) + 1
+        out = torch.zeros(size, dtype=src.dtype, device=src.device)
+        return out.scatter_add_(dim, index, src)
+    else:
+        return out.scatter_add_(dim, index, src)
+
+
+class Data(object):
+    r"""A plain old python object modeling a single graph with various
+    (optional) attributes:
+
+    Args:
+        x (Tensor, optional): Node feature matrix with shape :obj:`[num_nodes,
+            num_node_features]`. (default: :obj:`None`)
+        edge_index (LongTensor, optional): Graph connectivity in COO format
+            with shape :obj:`[2, num_edges]`. (default: :obj:`None`)
+        edge_attr (Tensor, optional): Edge feature matrix with shape
+            :obj:`[num_edges, num_edge_features]`. (default: :obj:`None`)
+        y (Tensor, optional): Graph or node targets with arbitrary shape.
+            (default: :obj:`None`)
+        pos (Tensor, optional): Node position matrix with shape
+            :obj:`[num_nodes, num_dimensions]`. (default: :obj:`None`)
+        normal (Tensor, optional): Normal vector matrix with shape
+            :obj:`[num_nodes, num_dimensions]`. (default: :obj:`None`)
+        face (LongTensor, optional): Face adjacency matrix with shape
+            :obj:`[3, num_faces]`. (default: :obj:`None`)
+
+    The data object is not restricted to these attributes and can be extented
+    by any other additional data.
+
+    Example::
+
+        data = Data(x=x, edge_index=edge_index)
+        data.train_idx = torch.tensor([...], dtype=torch.long)
+        data.test_mask = torch.tensor([...], dtype=torch.bool)
+    """
+    def __init__(self, x=None, edge_index=None, edge_attr=None, y=None,
+                 pos=None, normal=None, face=None, **kwargs):
+        self.x = x
+        self.edge_index = edge_index
+        self.edge_attr = edge_attr
+        self.y = y
+        self.pos = pos
+        self.normal = normal
+        self.face = face
+        for key, item in kwargs.items():
+            if key == 'num_nodes':
+                self.__num_nodes__ = item
+            else:
+                self[key] = item
+
+        if edge_index is not None and edge_index.dtype != torch.long:
+            raise ValueError(
+                (f'Argument `edge_index` needs to be of type `torch.long` but '
+                 f'found type `{edge_index.dtype}`.'))
+
+        if face is not None and face.dtype != torch.long:
+            raise ValueError(
+                (f'Argument `face` needs to be of type `torch.long` but found '
+                 f'type `{face.dtype}`.'))
+
+    @classmethod
+    def from_dict(cls, dictionary):
+        r"""Creates a data object from a python dictionary."""
+        data = cls()
+
+        for key, item in dictionary.items():
+            data[key] = item
+
+        return data
+
+    def to_dict(self):
+        return {key: item for key, item in self}
+
+    def __getitem__(self, key):
+        r"""Gets the data of the attribute :obj:`key`."""
+        return getattr(self, key, None)
+
+    def __setitem__(self, key, value):
+        """Sets the attribute :obj:`key` to :obj:`value`."""
+        setattr(self, key, value)
+
+    @property
+    def keys(self):
+        r"""Returns all names of graph attributes."""
+        keys = [key for key in self.__dict__.keys() if self[key] is not None]
+        keys = [key for key in keys if key[:2] != '__' and key[-2:] != '__']
+        return keys
+
+    def __len__(self):
+        r"""Returns the number of all present attributes."""
+        return len(self.keys)
+
+    def __contains__(self, key):
+        r"""Returns :obj:`True`, if the attribute :obj:`key` is present in the
+        data."""
+        return key in self.keys
+
+    def __iter__(self):
+        r"""Iterates over all present attributes in the data, yielding their
+        attribute names and content."""
+        for key in sorted(self.keys):
+            yield key, self[key]
+
+    def __call__(self, *keys):
+        r"""Iterates over all attributes :obj:`*keys` in the data, yielding
+        their attribute names and content.
+        If :obj:`*keys` is not given this method will iterative over all
+        present attributes."""
+        for key in sorted(self.keys) if not keys else keys:
+            if key in self:
+                yield key, self[key]
+    @property
+    def num_edges(self):
+        r"""Returns the number of edges in the graph."""
+        for key, item in self('edge_index', 'edge_attr'):
+            return item.size(self.__cat_dim__(key, item))
+        for key, item in self('adj', 'adj_t'):
+            return item.nnz()
+        return None
+
+    @property
+    def num_faces(self):
+        r"""Returns the number of faces in the mesh."""
+        if self.face is not None:
+            return self.face.size(self.__cat_dim__('face', self.face))
+        return None
+
+    @property
+    def num_node_features(self):
+        r"""Returns the number of features per node in the graph."""
+        if self.x is None:
+            return 0
+        return 1 if self.x.dim() == 1 else self.x.size(1)
+
+    @property
+    def num_features(self):
+        r"""Alias for :py:attr:`~num_node_features`."""
+        return self.num_node_features
+
+    @property
+    def num_edge_features(self):
+        r"""Returns the number of features per edge in the graph."""
+        if self.edge_attr is None:
+            return 0
+        return 1 if self.edge_attr.dim() == 1 else self.edge_attr.size(1)
+
+    def is_directed(self):
+        r"""Returns :obj:`True`, if graph edges are directed."""
+        return not self.is_undirected()
+
+    def __apply__(self, item, func):
+        if torch.is_tensor(item):
+            return func(item)
+        elif isinstance(item, (tuple, list)):
+            return [self.__apply__(v, func) for v in item]
+        elif isinstance(item, dict):
+            return {k: self.__apply__(v, func) for k, v in item.items()}
+        else:
+            return item
+
+    def apply(self, func, *keys):
+        r"""Applies the function :obj:`func` to all tensor attributes
+        :obj:`*keys`. If :obj:`*keys` is not given, :obj:`func` is applied to
+        all present attributes.
+        """
+        for key, item in self(*keys):
+            self[key] = self.__apply__(item, func)
+        return self
+
+    def contiguous(self, *keys):
+        r"""Ensures a contiguous memory layout for all attributes :obj:`*keys`.
+        If :obj:`*keys` is not given, all present attributes are ensured to
+        have a contiguous memory layout."""
+        return self.apply(lambda x: x.contiguous(), *keys)
+
+    def to(self, device, *keys, **kwargs):
+        r"""Performs tensor dtype and/or device conversion to all attributes
+        :obj:`*keys`.
+        If :obj:`*keys` is not given, the conversion is applied to all present
+        attributes."""
+        return self.apply(lambda x: x.to(device, **kwargs), *keys)
+
+    def debug(self):
+        if self.edge_index is not None:
+            if self.edge_index.dtype != torch.long:
+                raise RuntimeError(
+                    ('Expected edge indices of dtype {}, but found dtype '
+                     ' {}').format(torch.long, self.edge_index.dtype))
+
+        if self.face is not None:
+            if self.face.dtype != torch.long:
+                raise RuntimeError(
+                    ('Expected face indices of dtype {}, but found dtype '
+                     ' {}').format(torch.long, self.face.dtype))
+
+        if self.edge_index is not None:
+            if self.edge_index.dim() != 2 or self.edge_index.size(0) != 2:
+                raise RuntimeError(
+                    ('Edge indices should have shape [2, num_edges] but found'
+                     ' shape {}').format(self.edge_index.size()))
+
+        if self.edge_index is not None and self.num_nodes is not None:
+            if self.edge_index.numel() > 0:
+                min_index = self.edge_index.min()
+                max_index = self.edge_index.max()
+            else:
+                min_index = max_index = 0
+            if min_index < 0 or max_index > self.num_nodes - 1:
+                raise RuntimeError(
+                    ('Edge indices must lay in the interval [0, {}]'
+                     ' but found them in the interval [{}, {}]').format(
+                         self.num_nodes - 1, min_index, max_index))
+
+        if self.face is not None:
+            if self.face.dim() != 2 or self.face.size(0) != 3:
+                raise RuntimeError(
+                    ('Face indices should have shape [3, num_faces] but found'
+                     ' shape {}').format(self.face.size()))
+
+        if self.face is not None and self.num_nodes is not None:
+            if self.face.numel() > 0:
+                min_index = self.face.min()
+                max_index = self.face.max()
+            else:
+                min_index = max_index = 0
+            if min_index < 0 or max_index > self.num_nodes - 1:
+                raise RuntimeError(
+                    ('Face indices must lay in the interval [0, {}]'
+                     ' but found them in the interval [{}, {}]').format(
+                         self.num_nodes - 1, min_index, max_index))
+
+        if self.edge_index is not None and self.edge_attr is not None:
+            if self.edge_index.size(1) != self.edge_attr.size(0):
+                raise RuntimeError(
+                    ('Edge indices and edge attributes hold a differing '
+                     'number of edges, found {} and {}').format(
+                         self.edge_index.size(), self.edge_attr.size()))
+
+        if self.x is not None and self.num_nodes is not None:
+            if self.x.size(0) != self.num_nodes:
+                raise RuntimeError(
+                    ('Node features should hold {} elements in the first '
+                     'dimension but found {}').format(self.num_nodes,
+                                                      self.x.size(0)))
+
+        if self.pos is not None and self.num_nodes is not None:
+            if self.pos.size(0) != self.num_nodes:
+                raise RuntimeError(
+                    ('Node positions should hold {} elements in the first '
+                     'dimension but found {}').format(self.num_nodes,
+                                                      self.pos.size(0)))
+
+        if self.normal is not None and self.num_nodes is not None:
+            if self.normal.size(0) != self.num_nodes:
+                raise RuntimeError(
+                    ('Node normals should hold {} elements in the first '
+                     'dimension but found {}').format(self.num_nodes,
+                                                      self.normal.size(0)))
+
+class RGCNConv(nn.Module):
     r"""The relational graph convolutional operator from the `"Modeling
     Relational Data with Graph Convolutional Networks"
     <https://arxiv.org/abs/1703.06103>`_ paper
@@ -37,45 +327,79 @@ class RGCNConv(MessagePassing):
             :class:`torch_geometric.nn.conv.MessagePassing`.
     """
 
-    def __init__(self, in_channels, out_channels, num_relations, num_bases,
-                 root_weight=True, bias=True, **kwargs):
-        super(RGCNConv, self).__init__(aggr='mean', **kwargs)
+    def __init__(self, in_channels, out_channels, num_relations, num_bases, root_weight=True, bias=True, **kwargs):
+        super(RGCNConv, self).__init__(**kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_relations = num_relations
         self.num_bases = num_bases
 
-        self.basis = nn.Parameter(torch.Tensor(num_bases, in_channels, out_channels))
-        self.att = nn.Parameter(torch.Tensor(num_relations, num_bases))
+        # self.basis = nn.Parameter(torch.Tensor(num_bases, in_channels, out_channels))
+        # self.att = nn.Parameter(torch.Tensor(num_relations, num_bases))
+
+        self.weight = nn.Parameter(torch.Tensor(num_relations, in_channels, out_channels))
+        stdv = 1. / math.sqrt(self.weight.size(1))
+        self.weight.data.uniform_(-stdv, stdv)
 
         if root_weight:
             self.root = nn.Parameter(torch.Tensor(in_channels, out_channels))
-        else:
-            self.register_parameter('root', None)
-
         if bias:
             self.bias = nn.Parameter(torch.Tensor(out_channels))
-        else:
-            self.register_parameter('bias', None)
 
         self.reset_parameters()
 
     def reset_parameters(self):
-        size = self.num_bases * self.in_channels
-        uniform(size, self.basis)
-        uniform(size, self.att)
+        size = self.in_channels
+        # uniform(size, self.basis)
+        # uniform(size, self.att)
         uniform(size, self.root)
         uniform(size, self.bias)
 
-    def forward(self, x, edge_index, edge_type, edge_norm=None, size=None):
-        """"""
+    def forwarda(self, x, edge_index, edge_type, edge_norm=None, size=None, node_dim=0):
         return self.propagate(edge_index, size=size, x=x, edge_type=edge_type,
                               edge_norm=edge_norm)
 
+    def forward(self, x, edge_index, edge_type, edge_norm, node_dim):
+        # message passing
+        x_j = x[edge_index[0]]
+        w = self.weight
+        num_edges = edge_type.shape[0]
+        if num_edges > 100000:
+            with torch.no_grad():
+                batch_size = 3000
+                batches = math.ceil(num_edges / batch_size)
+                out = torch.zeros_like(x_j)
+                for batch in range(batches):
+                    index1 = batch * batch_size
+                    index2 = min((batch + 1) * batch_size, num_edges)
+                    edge_type_batch = edge_type[index1:index2]
+                    w_batch = torch.index_select(w, 0, edge_type_batch)
+                    x_j_batch = x_j[index1:index2]
+                    out[index1:index2] = torch.bmm(x_j_batch.unsqueeze(1), w_batch).squeeze(-2)
+        else:
+            w = torch.index_select(w, 0, edge_type)
+            out = torch.bmm(x_j.unsqueeze(1), w).squeeze(-2)
+        if edge_norm is not None:
+            out = out * edge_norm.view(-1, 1)
+
+        # aggregate
+        out = scatter(out, edge_index[0], dim=-2, dim_size=node_dim, reduce='sum')
+
+        # update
+        if self.root is not None:   #self loop
+            if x is None:
+                out = out + self.root
+            else:
+                out = out + torch.matmul(x, self.root)
+        # if self.bias is not None:
+        #     out = out + self.bias
+        return out
+
 
     def message(self, x_j, edge_index_j, edge_type, edge_norm):
-        w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
+        # w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
+        w = self.weight
 
         # If no node features are given, we implement a simple embedding
         # loopkup based on the target node index and its edge type.
@@ -104,20 +428,23 @@ class RGCNConv(MessagePassing):
         return out if edge_norm is None else out * edge_norm.view(-1, 1)
 
     def update(self, aggr_out, x):
-        if self.root is not None:
-            if x is None:
-                out = aggr_out + self.root
-            else:
-                out = aggr_out + torch.matmul(x, self.root)
+        return aggr_out
+        # if self.root is not None:
+        #     if x is None:
+        #         out = aggr_out + self.root
+        #     else:
+        #         out = aggr_out + torch.matmul(x, self.root)
+        #
+        # if self.bias is not None:
+        #     out = out + self.bias
+        # return out
 
-        if self.bias is not None:
-            out = out + self.bias
-        return out
 
     def __repr__(self):
         return '{}({}, {}, num_relations={})'.format(
             self.__class__.__name__, self.in_channels, self.out_channels,
             self.num_relations)
+
 
 def negative_sampling(pos_samples, num_entity, negative_rate):
     size_of_batch = len(pos_samples)
@@ -134,6 +461,7 @@ def negative_sampling(pos_samples, num_entity, negative_rate):
 
     return np.concatenate((pos_samples, neg_samples)), labels
 
+
 def edge_normalization(edge_type, edge_index, num_entity, num_relation):
     '''
         Edge normalization trick
@@ -144,11 +472,13 @@ def edge_normalization(edge_type, edge_index, num_entity, num_relation):
         - edge_norm: (num_edge)
     '''
     one_hot = F.one_hot(edge_type, num_classes = 2 * num_relation).to(torch.float)
-    deg = scatter_add(one_hot, edge_index[0], dim = 0, dim_size = num_entity)
+    deg = scatter_sum(one_hot, edge_index[0], dim = 0, dim_size = num_entity)
+    # deg = scatter_add(one_hot, edge_index[0], dim = 0, dim_size = num_entity)
     index = edge_type + torch.arange(len(edge_index[0])) * (2 * num_relation)
     edge_norm = 1 / deg[edge_index[0]].view(-1)[index]
 
     return edge_norm
+
 
 def generate_graph(triples, relation_total):
     head, rel, tail = triples.transpose()
@@ -227,10 +557,12 @@ def read_file(file_name):
                 data.append((int(li[0]), int(li[2]), int(li[1])))
     return data
 
+
 def uniform(size, tensor):
     bound = 1.0 / math.sqrt(size)
     if tensor is not None:
         tensor.data.uniform_(-bound, bound)
+
 
 def get_total(file_name):
     with open(file_name, 'r', encoding="utf-8") as f:
