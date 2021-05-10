@@ -221,83 +221,6 @@ class Data(object):
         attributes."""
         return self.apply(lambda x: x.to(device, **kwargs), *keys)
 
-    def debug(self):
-        if self.edge_index is not None:
-            if self.edge_index.dtype != torch.long:
-                raise RuntimeError(
-                    ('Expected edge indices of dtype {}, but found dtype '
-                     ' {}').format(torch.long, self.edge_index.dtype))
-
-        if self.face is not None:
-            if self.face.dtype != torch.long:
-                raise RuntimeError(
-                    ('Expected face indices of dtype {}, but found dtype '
-                     ' {}').format(torch.long, self.face.dtype))
-
-        if self.edge_index is not None:
-            if self.edge_index.dim() != 2 or self.edge_index.size(0) != 2:
-                raise RuntimeError(
-                    ('Edge indices should have shape [2, num_edges] but found'
-                     ' shape {}').format(self.edge_index.size()))
-
-        if self.edge_index is not None and self.num_nodes is not None:
-            if self.edge_index.numel() > 0:
-                min_index = self.edge_index.min()
-                max_index = self.edge_index.max()
-            else:
-                min_index = max_index = 0
-            if min_index < 0 or max_index > self.num_nodes - 1:
-                raise RuntimeError(
-                    ('Edge indices must lay in the interval [0, {}]'
-                     ' but found them in the interval [{}, {}]').format(
-                         self.num_nodes - 1, min_index, max_index))
-
-        if self.face is not None:
-            if self.face.dim() != 2 or self.face.size(0) != 3:
-                raise RuntimeError(
-                    ('Face indices should have shape [3, num_faces] but found'
-                     ' shape {}').format(self.face.size()))
-
-        if self.face is not None and self.num_nodes is not None:
-            if self.face.numel() > 0:
-                min_index = self.face.min()
-                max_index = self.face.max()
-            else:
-                min_index = max_index = 0
-            if min_index < 0 or max_index > self.num_nodes - 1:
-                raise RuntimeError(
-                    ('Face indices must lay in the interval [0, {}]'
-                     ' but found them in the interval [{}, {}]').format(
-                         self.num_nodes - 1, min_index, max_index))
-
-        if self.edge_index is not None and self.edge_attr is not None:
-            if self.edge_index.size(1) != self.edge_attr.size(0):
-                raise RuntimeError(
-                    ('Edge indices and edge attributes hold a differing '
-                     'number of edges, found {} and {}').format(
-                         self.edge_index.size(), self.edge_attr.size()))
-
-        if self.x is not None and self.num_nodes is not None:
-            if self.x.size(0) != self.num_nodes:
-                raise RuntimeError(
-                    ('Node features should hold {} elements in the first '
-                     'dimension but found {}').format(self.num_nodes,
-                                                      self.x.size(0)))
-
-        if self.pos is not None and self.num_nodes is not None:
-            if self.pos.size(0) != self.num_nodes:
-                raise RuntimeError(
-                    ('Node positions should hold {} elements in the first '
-                     'dimension but found {}').format(self.num_nodes,
-                                                      self.pos.size(0)))
-
-        if self.normal is not None and self.num_nodes is not None:
-            if self.normal.size(0) != self.num_nodes:
-                raise RuntimeError(
-                    ('Node normals should hold {} elements in the first '
-                     'dimension but found {}').format(self.num_nodes,
-                                                      self.normal.size(0)))
-
 class RGCNConv(nn.Module):
     r"""The relational graph convolutional operator from the `"Modeling
     Relational Data with Graph Convolutional Networks"
@@ -327,13 +250,12 @@ class RGCNConv(nn.Module):
             :class:`torch_geometric.nn.conv.MessagePassing`.
     """
 
-    def __init__(self, in_channels, out_channels, num_relations, num_bases, root_weight=True, bias=True, **kwargs):
+    def __init__(self, in_channels, out_channels, num_relations, root_weight=True, bias=True, **kwargs):
         super(RGCNConv, self).__init__(**kwargs)
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_relations = num_relations
-        self.num_bases = num_bases
 
         # self.basis = nn.Parameter(torch.Tensor(num_bases, in_channels, out_channels))
         # self.att = nn.Parameter(torch.Tensor(num_relations, num_bases))
@@ -360,7 +282,7 @@ class RGCNConv(nn.Module):
         return self.propagate(edge_index, size=size, x=x, edge_type=edge_type,
                               edge_norm=edge_norm)
 
-    def forward(self, x, edge_index, edge_type, edge_norm, node_dim):
+    def forward(self, x, edge_index, edge_type, edge_norm, dim):
         # message passing
         x_j = x[edge_index[0]]
         w = self.weight
@@ -384,7 +306,7 @@ class RGCNConv(nn.Module):
             out = out * edge_norm.view(-1, 1)
 
         # aggregate
-        out = scatter(out, edge_index[0], dim=-2, dim_size=node_dim, reduce='sum')
+        out = scatter(out, edge_index[0], dim=-2, dim_size=dim, reduce='sum')
 
         # update
         if self.root is not None:   #self loop
@@ -515,12 +437,10 @@ def generate_graph(triples, relation_total):
                         A_rel[relation, index] = 1
                         A_rel[index, relation] = 1
                         D_rel[relation, relation] += 1
-
     D_rel = np.linalg.inv(D_rel)
     D_rel = torch.Tensor(D_rel).cuda()
     i = list(range(relation_total))
     D_rel[i, i] = torch.sqrt(D_rel[i, i])
-
     DAD_rel = D_rel.mm(A_rel).mm(D_rel)
     # /calculate A and D of relation
 

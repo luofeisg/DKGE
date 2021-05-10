@@ -13,8 +13,8 @@ class DynamicKGE(nn.Module):
         super(DynamicKGE, self).__init__()
         self.entity_emb = nn.Parameter(torch.Tensor(config.entity_total, config.dim))
         self.relation_emb = nn.Parameter(torch.Tensor(config.relation_total, config.dim))
-        nn.init.xavier_uniform_(self.entity_emb, gain=nn.init.calculate_gain('relu'))
-        nn.init.xavier_uniform_(self.relation_emb, gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.entity_emb)
+        nn.init.xavier_uniform_(self.relation_emb)
         # self.entity_emb = nn.Embedding(config.entity_total, config.dim)
         # self.relation_emb = nn.Embedding(config.relation_total, config.dim)
 
@@ -29,8 +29,11 @@ class DynamicKGE(nn.Module):
         self.gate_entity = nn.Parameter(torch.Tensor(config.dim))
         self.gate_relation = nn.Parameter(torch.Tensor(config.dim))
 
-        self.conv1 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
-        self.conv2 = RGCNConv(config.dim, config.dim, config.relation_total * 2, num_bases=4)
+        self.conv1_entity = RGCNConv(config.dim, config.dim, config.relation_total * 2)
+        self.conv2_entity = RGCNConv(config.dim, config.dim, config.relation_total * 2)
+
+        self.conv1_relation = RGCNConv(config.dim, config.dim, 1)
+        self.conv2_relation = RGCNConv(config.dim, config.dim, 1)
 
         self._init_parameters()
 
@@ -82,12 +85,14 @@ class DynamicKGE(nn.Module):
         num_entity = entity.shape[0]
 
         # rgcn
-        entity_context = self.conv1(entity_context, edge_index, edge_type, edge_norm, node_dim=num_entity)
-        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
-        # entity_context = self.conv2(entity_context, edge_index, edge_type, edge_norm)
+        entity_context = F.relu(self.conv1_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity))
+        entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
+
+        # relation_context = F.relu(relation_context, relation_index, relation_type, relation_norm, )
         # gcn
-        relation_context = torch.matmul(DAD_rel, relation_context)
-        relation_context = torch.matmul(relation_context, self.relation_gcn_weight)
+        # relation_context = torch.matmul(DAD_rel, relation_context)
+        # relation_context = torch.matmul(relation_context, self.relation_gcn_weight)
 
         # calculate joint embedding
         entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
@@ -186,7 +191,7 @@ def main():
                                                      train_graph.edge_norm, train_graph.DAD_rel)
 
                 print('validate link prediction on train set starts...')
-                index = np.random.choice(train_triples.shape[0], 100)
+                index = np.random.choice(train_triples.shape[0], 1000)
                 mrr = test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
                 print('valid link prediction on train set ends...')
 

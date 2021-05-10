@@ -43,7 +43,7 @@ def predict(batch, entity_emb, relation_emb, norm):
     return p_score
 
 def get_rank(scores, golden_score):
-    res0 = torch.count_nonzero(scores < golden_score, axis=0) + 1
+    # res0 = torch.count_nonzero(scores < golden_score, axis=0) + 1
     # use numpy due to lower version of pytorch
     scores = scores.cpu().numpy()
     golden_score = golden_score.item()
