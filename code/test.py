@@ -42,6 +42,13 @@ def predict(batch, entity_emb, relation_emb, norm):
 
     return p_score
 
+def get_rank(scores, golden_score):
+    res0 = torch.count_nonzero(scores < golden_score, axis=0) + 1
+    # use numpy due to lower version of pytorch
+    scores = scores.cpu().numpy()
+    golden_score = golden_score.item()
+    res = np.count_nonzero(scores < golden_score, axis=0) + 1
+    return res
 
 def test_head(golden_triple, entity_emb, relation_emb, norm):
     head_batch = get_head_batch(golden_triple, len(entity_emb))
@@ -58,7 +65,7 @@ def test_head(golden_triple, entity_emb, relation_emb, norm):
     #         # if (pos, golden_triple[1], golden_triple[2]) in train_set:
     #         #     sub += 1
 
-    res = torch.count_nonzero(scores < golden_score, axis=0) + 1
+    res = get_rank(scores, golden_score)
     return res
     # return res, res - sub
 
@@ -78,85 +85,42 @@ def test_tail(golden_triple, entity_emb, relation_emb, norm):
     #         # if (golden_triple[0], golden_triple[1], pos) in train_set:
     #         #     sub += 1
 
-    res = torch.count_nonzero(scores < golden_score, axis=0) + 1
+    res = get_rank(scores, golden_score)
     return res
 
 
 def test_link_prediction(test_triples, entity_o, relation_o, norm):
-    test_total = len(test_triples)
+    hits = [1, 3, 10]
 
-    l_mr = 0
-    r_mr = 0
-    l_mrr = 0.0
-    r_mrr = 0.0
-
-    l_mr_filter = 0
-    r_mr_filter = 0
-
-    l_hit1 = 0
-    r_hit1 = 0
-    l_hit3 = 0
-    r_hit3 = 0
-    l_hit10 = 0
-    r_hit10 = 0
+    l_rank = []
+    r_rank = []
 
     for i, golden_triple in enumerate(test_triples):
-        # print('test ---' + str(i) + '--- triple')
-        # print(i, end="\r")
         l_pos = test_head(golden_triple, entity_o, relation_o, norm)
         r_pos = test_tail(golden_triple, entity_o, relation_o, norm)  # position, 1-based
 
-        # print(golden_triple, end=': ')
-        # print('l_pos=' + str(l_pos), end=', ')
-        # print('l_filter_pos=' + str(l_filter_pos), end=', ')
-        # print('r_pos=' + str(r_pos), end=', ')
-        # print('r_filter_pos=' + str(r_filter_pos), end='\n')
+        l_rank.append(l_pos)
+        r_rank.append(r_pos)
 
-        l_mr += l_pos
-        r_mr += r_pos
-        l_mrr += 1/l_pos
-        r_mrr += 1/r_pos
+    l_rank = np.array(l_rank)
+    r_rank = np.array(r_rank)
 
-        if l_pos <= 10:
-            l_hit10 += 1
-            if l_pos <= 3:
-                l_hit3 += 1
-                if l_pos == 1:
-                    l_hit1 += 1
+    l_mr = np.mean(l_rank)
+    r_mr = np.mean(r_rank)
+    l_mrr = np.mean(1. / l_rank)
+    r_mrr = np.mean(1. / r_rank)
 
-        if r_pos <= 10:
-            r_hit10 += 1
-            if r_pos <= 3:
-                r_hit3 += 1
-                if r_pos == 1:
-                    r_hit1 += 1
-
-        # l_mr_filter += l_filter_pos
-        # r_mr_filter += r_filter_pos
-
-    l_mr = float(l_mr)/test_total
-    r_mr = float(r_mr) / test_total
-    l_mrr = float(l_mrr) / test_total
-    r_mrr = float(r_mrr) / test_total
-
-    l_hit1_ratio = float(l_hit1)/test_total
-    l_hit3_ratio = float(l_hit3)/test_total
-    l_hit10_ratio = float(l_hit10)/test_total
-    r_hit1_ratio = float(r_hit1)/test_total
-    r_hit3_ratio = float(r_hit3)/test_total
-    r_hit10_ratio = float(r_hit10)/test_total
-
-    l_mr_filter /= test_total
-    r_mr_filter /= test_total
+    l_hit1_ratio = np.mean(l_rank <= 1)
+    l_hit3_ratio = np.mean(l_rank <= 3)
+    l_hit10_ratio = np.mean(l_rank <= 10)
+    r_hit1_ratio = np.mean(r_rank <= 1)
+    r_hit3_ratio = np.mean(r_rank <= 3)
+    r_hit10_ratio = np.mean(r_rank <= 10)
 
     print('\t\t\t\t\tMR\t\t\t\tMRR\t\t\t\tHit@1,3,10')
     print('head(raw)\t\t\t%.3f\t\t\t%.3f\t\t\t%.3f\t%.3f\t%.3f' % (l_mr, l_mrr, l_hit1_ratio, l_hit3_ratio, l_hit10_ratio))
     print('tail(raw)\t\t\t%.3f\t\t\t%.3f\t\t\t%.3f\t%.3f\t%.3f' % (r_mr, r_mrr, r_hit1_ratio, r_hit3_ratio, r_hit10_ratio))
-    print('average(raw)\t\t%.3f\t\t\t%.3f\t\t\t%.3f\t%.3f\t%.3f' % ((l_mr + r_mr) / 2, (l_mrr + r_mrr) / 2, (l_hit1_ratio + r_hit1_ratio) / 2, (l_hit3_ratio + r_hit3_ratio) / 2, (l_hit10_ratio + r_hit10_ratio) / 2 ))
-
-    # print('head(filter)\t\t%.3f\t\t\t' % l_mr_filter)
-    # print('tail(filter)\t\t%.3f\t\t\t' % r_mr_filter)
-    # print('average(filter)\t\t%.3f\t\t\t' % ((l_mr_filter + r_mr_filter) / 2))
+    print('average(raw)\t\t%.3f\t\t\t%.3f\t\t\t%.3f\t%.3f\t%.3f' % ((l_mr + r_mr) / 2, (l_mrr + r_mrr) / 2, (l_hit1_ratio + r_hit1_ratio) / 2, (l_hit3_ratio + r_hit3_ratio) / 2, (l_hit10_ratio + r_hit10_ratio) / 2))
 
     return (l_mrr + r_mrr) / 2
 
