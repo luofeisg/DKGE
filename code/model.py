@@ -8,6 +8,9 @@ from util.train_util import uniform, scatter
 class DynamicKGE(nn.Module):
     def __init__(self, num_entities, num_relations, dim, norm):
         super(DynamicKGE, self).__init__()
+        self.num_entities = num_entities
+        self.num_relations = num_relations
+        self.dim = dim
         self.norm = norm
 
         self.entity_emb = nn.Parameter(torch.Tensor(num_entities, dim))
@@ -23,7 +26,7 @@ class DynamicKGE(nn.Module):
         # self.relation_context = nn.Embedding(config.relation_total + 1, config.dim, padding_idx=config.relation_total)
 
         # self.entity_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim))
-        self.relation_gcn_weight = nn.Parameter(torch.Tensor(dim, dim))
+        # self.relation_gcn_weight = nn.Parameter(torch.Tensor(dim, dim))
 
         self.gate_entity = nn.Parameter(torch.Tensor(dim))
         self.gate_relation = nn.Parameter(torch.Tensor(dim))
@@ -40,8 +43,8 @@ class DynamicKGE(nn.Module):
         nn.init.uniform_(self.gate_entity.data)
         nn.init.uniform_(self.gate_relation.data)
 
-        stdv = 1. / math.sqrt(self.relation_gcn_weight.size(1))
-        self.relation_gcn_weight.data.uniform_(-stdv, stdv)
+        # stdv = 1. / math.sqrt(self.relation_gcn_weight.size(1))
+        # self.relation_gcn_weight.data.uniform_(-stdv, stdv)
 
     def _calc(self, h, t, r):
         return torch.norm(h + r - t, p=self.norm, dim=1)
@@ -117,25 +120,27 @@ class DKGE_Online(nn.Module):
         self.dim = dim
         self.norm = norm
 
-        # self.entity_emb = nn.Parameter(torch.Tensor(config.entity_total, config.dim))
-        # self.relation_emb = nn.Parameter(torch.Tensor(config.relation_total, config.dim))
-        self.entity_emb = nn.Embedding(num_entities, dim)
-        self.relation_emb = nn.Embedding(num_relations, dim)
+        self.entity_emb = nn.Parameter(torch.Tensor(num_entities, dim))
+        self.relation_emb = nn.Parameter(torch.Tensor(num_relations, dim))
+        nn.init.xavier_uniform_(self.entity_emb)
+        nn.init.xavier_uniform_(self.relation_emb)
+        # self.entity_emb = nn.Embedding(num_entities, dim)
+        # self.relation_emb = nn.Embedding(num_relations, dim)
 
         self.entity_context = nn.Embedding(num_entities, dim)
         self.relation_context = nn.Embedding(num_relations, dim)
 
         # self.entity_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim), requires_grad=False)
-        self.relation_gcn_weight = nn.Parameter(torch.Tensor(dim, dim))
+        # self.relation_gcn_weight = nn.Parameter(torch.Tensor(dim, dim))
 
         self.gate_entity = nn.Parameter(torch.Tensor(dim))
         self.gate_relation = nn.Parameter(torch.Tensor(dim))
 
-        self.v_ent = nn.Parameter(torch.Tensor(dim))
-        self.v_rel = nn.Parameter(torch.Tensor(dim))
+        self.conv1_entity = RGCNConv(dim, dim, num_relations * 2)
+        self.conv2_entity = RGCNConv(dim, dim, num_relations * 2)
 
-        self.conv1 = RGCNConv(dim, dim, num_relations * 2)
-        self.conv2 = RGCNConv(dim, dim, num_relations * 2)
+        # self.conv1_relation = RGCNConv(dim, dim, 1)
+        # self.conv2_relation = RGCNConv(dim, dim, 1)
 
         # self._init_parameters()
 
@@ -164,7 +169,7 @@ class DKGE_Online(nn.Module):
             self.pr_o[r] = relation_o_emb[i].detach().cpu().numpy().tolist()
 
     def _calc(self, h, t, r):
-        return torch.norm(h + r - t, self.norm, dim=1)
+        return torch.norm(h + r - t, p=self.norm, dim=1)
 
     def gcn(self, A, H, target='entity'):
         support = torch.matmul(A, H)
@@ -173,6 +178,19 @@ class DKGE_Online(nn.Module):
         elif target == 'relation':
             output = F.relu(torch.matmul(support, self.relation_gcn_weight))
         return output
+
+    def score_loss(self, entity_o, relation_o, triplets, target):
+        h = entity_o[triplets[:, 0]]
+        r = relation_o[triplets[:, 1]]
+        t = entity_o[triplets[:, 2]]
+
+        # score = self.distmult(entity_o, relation_o, triplets)
+        # return F.binary_cross_entropy_with_logits(score, target)
+        score = torch.norm(h + r - t, p=self.norm, dim=1)
+        return score
+
+    def reg_loss(self, entity_o, relation_o):
+        return torch.mean(entity_o.pow(2)) + torch.mean(relation_o.pow(2))
 
     def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
         entity_context = self.entity_context(entity.long())
@@ -254,7 +272,7 @@ class RGCNConv(nn.Module):
         x_j = x[edge_index[0]]
         w = self.weight
         num_edges = edge_type.shape[0]
-        if num_edges > 100000:
+        if num_edges > 200000:
             with torch.no_grad():
                 batch_size = 3000
                 batches = math.ceil(num_edges / batch_size)

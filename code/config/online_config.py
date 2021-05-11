@@ -122,18 +122,20 @@ def prepare_online_data(parameter_path):
     for key in old_model_parameter.keys():
         new_model_parameter[key] = old_model_parameter[key].clone()
 
-    new_model_parameter['entity_emb.weight'] = torch.zeros(entity_total, dim).cuda()
+    # entity
+    new_model_parameter['entity_emb'] = torch.zeros(entity_total, dim).cuda()
     new_model_parameter['entity_context.weight'] = torch.zeros(entity_total, dim).cuda()
-    nn.init.xavier_uniform_(new_model_parameter['entity_emb.weight'])
-    nn.init.xavier_uniform_(new_model_parameter['entity_context.weight'])
+    nn.init.xavier_uniform_(new_model_parameter['entity_emb'])
+    nn.init.uniform_(new_model_parameter['entity_context.weight'])
     for id1, id2 in entity_mapping_dict.items():
         new_model_parameter['entity_emb.weight'][id2] = old_model_parameter['entity_emb.weight'][id1]
         new_model_parameter['entity_context.weight'][id2] = old_model_parameter['entity_context.weight'][id1]
 
-    new_model_parameter['relation_emb.weight'] = torch.zeros(relation_total, dim).cuda()
+    # relation
+    new_model_parameter['relation_emb'] = torch.zeros(relation_total, dim).cuda()
     new_model_parameter['relation_context.weight'] = torch.zeros(relation_total, dim).cuda()
-    new_model_parameter['conv1.att'] = torch.zeros(relation_total*2, 4)
-    new_model_parameter['conv2.att'] = torch.zeros(relation_total*2, 4)
+    new_model_parameter['conv1_entity.weight'] = torch.zeros(relation_total*2, dim)
+    new_model_parameter['conv2_entity.weight'] = torch.zeros(relation_total*2, dim)
     nn.init.xavier_uniform_(new_model_parameter['relation_emb.weight'])
     nn.init.xavier_uniform_(new_model_parameter['relation_context.weight'])
     nn.init.xavier_uniform_(new_model_parameter['conv1.att'])

@@ -98,6 +98,8 @@ def main():
                     best_mrr = mrr
                     best_mrr_epoch = epoch
                     torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, model_state_file)
+    if best_mrr_epoch <= 0:
+        torch.save({'state_dict': model.state_dict(), 'epoch': epoch}, model_state_file)
 
     print('train ending...')
     train_end_time = time.time()

@@ -1,15 +1,12 @@
-import os
 import time
-import math
-import json
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import numpy as np
 import torch.optim as optim
 
 from config import online_config as config
 import test
-from util.train_util import *
+from util.train_util import generate_graph
 from model import DKGE_Online
 
 # gpu_ids = [0, 1]
