@@ -263,16 +263,12 @@ class RGCNConv(nn.Module):
         uniform(size, self.root)
         uniform(size, self.bias)
 
-    def forwarda(self, x, edge_index, edge_type, edge_norm=None, size=None, node_dim=0):
-        return self.propagate(edge_index, size=size, x=x, edge_type=edge_type,
-                              edge_norm=edge_norm)
-
     def forward(self, x, edge_index, edge_type, edge_norm, dim):
         # message passing
         x_j = x[edge_index[0]]
         w = self.weight
         num_edges = edge_type.shape[0]
-        if num_edges > 200000:
+        if num_edges > 100000:
             with torch.no_grad():
                 batch_size = 3000
                 batches = math.ceil(num_edges / batch_size)
@@ -291,7 +287,7 @@ class RGCNConv(nn.Module):
             out = out * edge_norm.view(-1, 1)
 
         # aggregate
-        out = scatter(out, edge_index[0], dim=-2, dim_size=dim, reduce='sum')
+        out = scatter(out, edge_index[1], dim=-2, dim_size=dim, reduce='sum')
 
         # update
         if self.root is not None:   #self loop
@@ -304,50 +300,53 @@ class RGCNConv(nn.Module):
         return out
 
 
-    def message(self, x_j, edge_index_j, edge_type, edge_norm):
-        # w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
-        w = self.weight
-
-        # If no node features are given, we implement a simple embedding
-        # loopkup based on the target node index and its edge type.
-        if x_j is None:
-            w = w.view(-1, self.out_channels)
-            index = edge_type * self.in_channels + edge_index_j
-            out = torch.index_select(w, 0, index)
-        else:
-            w = w.view(self.num_relations, self.in_channels, self.out_channels)
-            if edge_type.shape[0] > 100000:  # prevent memory overflow, only for testing temporarily
-                with torch.no_grad():
-                    batch_size = 3000
-                    batches = math.ceil(edge_type.shape[0]/batch_size)
-                    out = torch.zeros_like(x_j)
-                    for batch in range(batches):
-                        index1 = batch*batch_size
-                        index2 = min((batch+1)*batch_size, edge_type.shape[0])
-                        edge_type_batch = edge_type[index1:index2]
-                        w_batch = torch.index_select(w, 0, edge_type_batch)
-                        x_j_batch = x_j[index1:index2]
-                        out[index1:index2] = torch.bmm(x_j_batch.unsqueeze(1), w_batch).squeeze(-2)
-            else:
-                w = torch.index_select(w, 0, edge_type)
-                out = torch.bmm(x_j.unsqueeze(1), w).squeeze(-2)
-
-        return out if edge_norm is None else out * edge_norm.view(-1, 1)
-
-    def update(self, aggr_out, x):
-        return aggr_out
-        # if self.root is not None:
-        #     if x is None:
-        #         out = aggr_out + self.root
-        #     else:
-        #         out = aggr_out + torch.matmul(x, self.root)
-        #
-        # if self.bias is not None:
-        #     out = out + self.bias
-        # return out
-
-
-    def __repr__(self):
-        return '{}({}, {}, num_relations={})'.format(
-            self.__class__.__name__, self.in_channels, self.out_channels,
-            self.num_relations)
+    # def forwarda(self, x, edge_index, edge_type, edge_norm=None, size=None, node_dim=0):
+    #     return self.propagate(edge_index, size=size, x=x, edge_type=edge_type,
+    #                           edge_norm=edge_norm)
+    #
+    # def message(self, x_j, edge_index_j, edge_type, edge_norm):
+    #     # w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
+    #     w = self.weight
+    #
+    #     # If no node features are given, we implement a simple embedding
+    #     # loopkup based on the target node index and its edge type.
+    #     if x_j is None:
+    #         w = w.view(-1, self.out_channels)
+    #         index = edge_type * self.in_channels + edge_index_j
+    #         out = torch.index_select(w, 0, index)
+    #     else:
+    #         w = w.view(self.num_relations, self.in_channels, self.out_channels)
+    #         if edge_type.shape[0] > 100000:  # prevent memory overflow, only for testing temporarily
+    #             with torch.no_grad():
+    #                 batch_size = 3000
+    #                 batches = math.ceil(edge_type.shape[0]/batch_size)
+    #                 out = torch.zeros_like(x_j)
+    #                 for batch in range(batches):
+    #                     index1 = batch*batch_size
+    #                     index2 = min((batch+1)*batch_size, edge_type.shape[0])
+    #                     edge_type_batch = edge_type[index1:index2]
+    #                     w_batch = torch.index_select(w, 0, edge_type_batch)
+    #                     x_j_batch = x_j[index1:index2]
+    #                     out[index1:index2] = torch.bmm(x_j_batch.unsqueeze(1), w_batch).squeeze(-2)
+    #         else:
+    #             w = torch.index_select(w, 0, edge_type)
+    #             out = torch.bmm(x_j.unsqueeze(1), w).squeeze(-2)
+    #
+    #     return out if edge_norm is None else out * edge_norm.view(-1, 1)
+    #
+    # def update(self, aggr_out, x):
+    #     return aggr_out
+    #     # if self.root is not None:
+    #     #     if x is None:
+    #     #         out = aggr_out + self.root
+    #     #     else:
+    #     #         out = aggr_out + torch.matmul(x, self.root)
+    #     #
+    #     # if self.bias is not None:
+    #     #     out = out + self.bias
+    #     # return out
+    #
+    # def __repr__(self):
+    #     return '{}({}, {}, num_relations={})'.format(
+    #         self.__class__.__name__, self.in_channels, self.out_channels,
+    #         self.num_relations)
