@@ -342,6 +342,7 @@ def generate_test_graph(triples, relation_total):
     data.edge_norm = edge_norm
     data.uniq_entity = uniq_entity
     data.relabeled_edges = relabeled_edges
+    data.DAD_rel = torch.tensor(0)
 
     return data
 
