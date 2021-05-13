@@ -53,7 +53,7 @@ def main():
         # sample from whole graph
         sample_index = np.random.choice(len(train_triples), sample_size, replace=False)
         sample_edges = train_triples[sample_index]
-        train_data = generate_graph(sample_edges, config.relation_total)
+        train_data = generate_graph_and_negative_sampling(sample_edges, config.relation_total)
 
         train_data.to(device_cuda)
 
@@ -79,7 +79,7 @@ def main():
         if epoch % validate_every == 0:
             model.eval()
             with torch.no_grad():
-                train_graph = generate_graph(train_triples, config.relation_total)
+                train_graph = generate_test_graph(train_triples, config.relation_total)
                 train_graph.to(device_cuda)
                 entity_o, relation_o = model(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
                                                      train_graph.edge_norm, train_graph.DAD_rel)
@@ -111,7 +111,7 @@ def main():
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
     with torch.no_grad():
-        train_graph = generate_graph(train_triples, config.relation_total)
+        train_graph = generate_test_graph(train_triples, config.relation_total)
         train_graph.to(device_cuda)
         entity_o, relation_o = model(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
                                      train_graph.edge_norm, train_graph.DAD_rel)

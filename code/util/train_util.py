@@ -256,7 +256,7 @@ def edge_normalization(edge_type, edge_index, num_entity, num_relation):
     return edge_norm
 
 
-def generate_graph(triples, relation_total):
+def generate_graph_and_negative_sampling(triples, relation_total):
     head, rel, tail = triples.transpose()
     uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
     head, tail = np.reshape(entity_idx_inv, (2, -1))
@@ -317,6 +317,31 @@ def generate_graph(triples, relation_total):
     data.relabeled_edges = relabeled_edges
     data.samples = samples
     data.labels = torch.from_numpy(labels)
+
+    return data
+
+def generate_test_graph(triples, relation_total):
+    head, rel, tail = triples.transpose()
+    uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
+    head, tail = np.reshape(entity_idx_inv, (2, -1))
+    relabeled_edges = np.stack((head, rel, tail)).transpose()
+
+    head = torch.tensor(head, dtype=torch.long)
+    tail = torch.tensor(tail, dtype=torch.long)
+    rel = torch.tensor(rel, dtype=torch.long)
+    head, tail = torch.cat((head, tail)), torch.cat((tail, head))
+    rel = torch.cat((rel, rel + relation_total))
+
+    edge_index = torch.stack((head, tail))
+    edge_type = rel
+    edge_norm = edge_normalization(edge_type, edge_index, len(uniq_entity), relation_total)
+
+    data = Data(edge_index=edge_index)
+    data.entity = torch.from_numpy(uniq_entity)
+    data.edge_type = edge_type
+    data.edge_norm = edge_norm
+    data.uniq_entity = uniq_entity
+    data.relabeled_edges = relabeled_edges
 
     return data
 
