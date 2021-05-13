@@ -6,7 +6,7 @@ import torch.optim as optim
 
 from config import online_config as config
 import test
-from util.train_util import generate_graph
+from util.train_util import generate_graph_and_negative_sampling, generate_test_graph
 from model import DKGE_Online
 
 # gpu_ids = [0, 1]
@@ -60,7 +60,7 @@ def main():
         all_edges = np.arange(len(affected_triples))
         sample_index = np.random.choice(all_edges, sample_size, replace=False)
         sample_edges = affected_triples[sample_index]
-        train_data = generate_graph(sample_edges, config.relation_total)
+        train_data = generate_graph_and_negative_sampling(sample_edges, config.relation_total)
         train_data.to(device)
 
         entity_context, relation_context = model(train_data.entity, train_data.edge_index, train_data.edge_type,

@@ -266,21 +266,21 @@ def generate_graph_and_negative_sampling(triples, relation_total):
     samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), negative_rate=1)
     samples = torch.from_numpy(samples)
 
-    # further split graph, only half of the edges will be used as graph
-    # structure, while the rest half is used as unseen positive samples
-    split_size = int(triples.shape[0] * 0.5)
-    graph_split_ids = np.random.choice(np.arange(triples.shape[0]), size=split_size, replace=False)
-    head = head[graph_split_ids]
-    tail = tail[graph_split_ids]
-    rel = rel[graph_split_ids]
+    # # further split graph, only half of the edges will be used as graph
+    # # structure, while the rest half is used as unseen positive samples
+    # split_size = int(triples.shape[0] * 0.5)
+    # graph_split_ids = np.random.choice(np.arange(triples.shape[0]), size=split_size, replace=False)
+    # head = head[graph_split_ids]
+    # tail = tail[graph_split_ids]
+    # rel = rel[graph_split_ids]
 
-    split_relabeled_edges = np.stack((head, rel, tail)).transpose()
+    # split_relabeled_edges = np.stack((head, rel, tail)).transpose()
     # calculate A and D of relation
     relation_entity_table = dict()
     A_rel = torch.eye(relation_total, relation_total).cuda()
     D_rel = np.eye(relation_total, relation_total)
-    for i in range(split_relabeled_edges.shape[0]):
-        h, r, t = split_relabeled_edges[i]
+    for i in range(relabeled_edges.shape[0]):
+        h, r, t = relabeled_edges[i]
         relation_entity_table.setdefault(r, set()).add(h)
         relation_entity_table.setdefault(r, set()).add(t)
     for relation in range(relation_total):
@@ -326,6 +326,29 @@ def generate_test_graph(triples, relation_total):
     head, tail = np.reshape(entity_idx_inv, (2, -1))
     relabeled_edges = np.stack((head, rel, tail)).transpose()
 
+    # calculate A and D of relation
+    relation_entity_table = dict()
+    A_rel = torch.eye(relation_total, relation_total).cuda()
+    D_rel = np.eye(relation_total, relation_total)
+    for i in range(relabeled_edges.shape[0]):
+        h, r, t = relabeled_edges[i]
+        relation_entity_table.setdefault(r, set()).add(h)
+        relation_entity_table.setdefault(r, set()).add(t)
+    for relation in range(relation_total):
+        if relation in relation_entity_table:
+            for index in range(relation + 1, relation_total):
+                if index != relation and index in relation_entity_table:
+                    if not relation_entity_table[relation].isdisjoint(relation_entity_table[index]):
+                        A_rel[relation, index] = 1
+                        A_rel[index, relation] = 1
+                        D_rel[relation, relation] += 1
+    D_rel = np.linalg.inv(D_rel)
+    D_rel = torch.Tensor(D_rel).cuda()
+    i = list(range(relation_total))
+    D_rel[i, i] = torch.sqrt(D_rel[i, i])
+    DAD_rel = D_rel.mm(A_rel).mm(D_rel)
+    # /calculate A and D of relation
+
     head = torch.tensor(head, dtype=torch.long)
     tail = torch.tensor(tail, dtype=torch.long)
     rel = torch.tensor(rel, dtype=torch.long)
@@ -342,7 +365,7 @@ def generate_test_graph(triples, relation_total):
     data.edge_norm = edge_norm
     data.uniq_entity = uniq_entity
     data.relabeled_edges = relabeled_edges
-    data.DAD_rel = torch.tensor(0)
+    data.DAD_rel = DAD_rel
 
     return data
 

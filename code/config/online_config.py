@@ -128,7 +128,7 @@ def prepare_online_data(parameter_path):
     nn.init.xavier_uniform_(new_model_parameter['entity_emb'])
     nn.init.uniform_(new_model_parameter['entity_context.weight'])
     for id1, id2 in entity_mapping_dict.items():
-        new_model_parameter['entity_emb.weight'][id2] = old_model_parameter['entity_emb.weight'][id1]
+        new_model_parameter['entity_emb'][id2] = old_model_parameter['entity_emb'][id1]
         new_model_parameter['entity_context.weight'][id2] = old_model_parameter['entity_context.weight'][id1]
 
     # relation
@@ -136,13 +136,13 @@ def prepare_online_data(parameter_path):
     new_model_parameter['relation_context.weight'] = torch.zeros(relation_total, dim).cuda()
     new_model_parameter['conv1_entity.weight'] = torch.zeros(relation_total*2, dim)
     new_model_parameter['conv2_entity.weight'] = torch.zeros(relation_total*2, dim)
-    nn.init.xavier_uniform_(new_model_parameter['relation_emb.weight'])
+    nn.init.xavier_uniform_(new_model_parameter['relation_emb'])
     nn.init.xavier_uniform_(new_model_parameter['relation_context.weight'])
     nn.init.xavier_uniform_(new_model_parameter['conv1.att'])
     nn.init.xavier_uniform_(new_model_parameter['conv2.att'])
     relation_total_old = len(relation_mapping_dict.keys())
     for id1, id2 in relation_mapping_dict.items():
-        new_model_parameter['relation_emb.weight'][id2] = old_model_parameter['relation_emb.weight'][id1]
+        new_model_parameter['relation_emb'][id2] = old_model_parameter['relation_emb.weight'][id1]
         new_model_parameter['relation_context.weight'][id2] = old_model_parameter['relation_context.weight'][id1]
         new_model_parameter['conv1.att'][id2] = old_model_parameter['conv1.att'][id1]
         new_model_parameter['conv2.att'][id2] = old_model_parameter['conv2.att'][id1]
