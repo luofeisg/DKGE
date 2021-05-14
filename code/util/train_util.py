@@ -266,21 +266,21 @@ def generate_graph_and_negative_sampling(triples, relation_total):
     samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), negative_rate=1)
     samples = torch.from_numpy(samples)
 
-    # # further split graph, only half of the edges will be used as graph
-    # # structure, while the rest half is used as unseen positive samples
-    # split_size = int(triples.shape[0] * 0.5)
-    # graph_split_ids = np.random.choice(np.arange(triples.shape[0]), size=split_size, replace=False)
-    # head = head[graph_split_ids]
-    # tail = tail[graph_split_ids]
-    # rel = rel[graph_split_ids]
+    # further split graph, only half of the edges will be used as graph
+    # structure, while the rest half is used as unseen positive samples
+    split_size = int(triples.shape[0] * 0.5)
+    graph_split_ids = np.random.choice(np.arange(triples.shape[0]), size=split_size, replace=False)
+    head = head[graph_split_ids]
+    tail = tail[graph_split_ids]
+    rel = rel[graph_split_ids]
 
-    # split_relabeled_edges = np.stack((head, rel, tail)).transpose()
+    split_relabeled_edges = np.stack((head, rel, tail)).transpose()
     # calculate A and D of relation
     relation_entity_table = dict()
     A_rel = torch.eye(relation_total, relation_total).cuda()
     D_rel = np.eye(relation_total, relation_total)
-    for i in range(relabeled_edges.shape[0]):
-        h, r, t = relabeled_edges[i]
+    for i in range(split_relabeled_edges.shape[0]):
+        h, r, t = split_relabeled_edges[i]
         relation_entity_table.setdefault(r, set()).add(h)
         relation_entity_table.setdefault(r, set()).add(t)
     for relation in range(relation_total):

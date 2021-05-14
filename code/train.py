@@ -79,10 +79,10 @@ def main():
         if epoch % validate_every == 0:
             model.eval()
             with torch.no_grad():
-                train_graph = generate_test_graph(train_triples, config.relation_total)
-                train_graph.to(device_cuda)
-                entity_o, relation_o = model(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
-                                                     train_graph.edge_norm, train_graph.DAD_rel)
+                test_graph = generate_test_graph(train_triples, config.relation_total)
+                test_graph.to(device_cuda)
+                entity_o, relation_o = model(test_graph.entity, test_graph.edge_index, test_graph.edge_type,
+                                                     test_graph.edge_norm, test_graph.DAD_rel)
 
                 print('validate link prediction on train set starts...')
                 index = np.random.choice(train_triples.shape[0], 1000)
@@ -111,10 +111,10 @@ def main():
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
     with torch.no_grad():
-        train_graph = generate_test_graph(train_triples, config.relation_total)
-        train_graph.to(device_cuda)
-        entity_o, relation_o = model(train_graph.entity, train_graph.edge_index, train_graph.edge_type,
-                                     train_graph.edge_norm, train_graph.DAD_rel)
+        test_graph = generate_test_graph(train_triples, config.relation_total)
+        test_graph.to(device_cuda)
+        entity_o, relation_o = model(test_graph.entity, test_graph.edge_index, test_graph.edge_type,
+                                     test_graph.edge_norm, test_graph.DAD_rel)
 
         print('test link prediction on train set starts...')
         index = np.random.choice(train_triples.shape[0], 1000)
