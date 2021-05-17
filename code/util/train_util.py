@@ -222,18 +222,15 @@ class Data(object):
         return self.apply(lambda x: x.to(device, **kwargs), *keys)
 
 
-def negative_sampling(pos_samples, num_entity, negative_rate):
+def negative_sampling(pos_samples, num_entity, train_set, tph, hpt, negative_rate=1):
     size_of_batch = len(pos_samples)
     num_to_generate = size_of_batch * negative_rate
-    neg_samples = np.tile(pos_samples, (negative_rate, 1))
+    # neg_samples = np.tile(pos_samples, (negative_rate, 1))
+    neg_samples = np.zeros_like(pos_samples) - 1
     labels = np.zeros(size_of_batch * (negative_rate + 1), dtype=np.float32)
     labels[: size_of_batch] = 1
-    values = np.random.choice(num_entity, size=num_to_generate)
-    choices = np.random.uniform(size=num_to_generate)
-    subj = choices > 0.5
-    obj = choices <= 0.5
-    neg_samples[subj, 0] = values[subj]
-    neg_samples[obj, 2] = values[obj]
+    for i, golden_triples in enumerate(pos_samples):
+        neg_samples[i] = one_negative_sampling(golden_triples, train_set, num_entity, True, tph, hpt)
 
     return np.concatenate((pos_samples, neg_samples)), labels
 
@@ -256,14 +253,14 @@ def edge_normalization(edge_type, edge_index, num_entity, num_relation):
     return edge_norm
 
 
-def generate_graph_and_negative_sampling(triples, relation_total):
+def generate_graph_and_negative_sampling(triples, relation_total, train_set, tph=1.0, hpt=1.0):
     head, rel, tail = triples.transpose()
     uniq_entity, entity_idx, entity_idx_inv = np.unique((head, tail), return_index=True, return_inverse=True)
     head, tail = np.reshape(entity_idx_inv, (2, -1))
     relabeled_edges = np.stack((head, rel, tail)).transpose()
 
     # Negative sampling
-    samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), negative_rate=1)
+    samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), train_set, tph, hpt, negative_rate=1)
     samples = torch.from_numpy(samples)
 
     # further split graph, only half of the edges will be used as graph
@@ -319,6 +316,7 @@ def generate_graph_and_negative_sampling(triples, relation_total):
     data.labels = torch.from_numpy(labels)
 
     return data
+
 
 def generate_test_graph(triples, relation_total):
     head, rel, tail = triples.transpose()

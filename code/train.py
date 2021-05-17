@@ -12,6 +12,7 @@ def main():
     train_triples = config.train_triples
     valid_triples = config.valid_triples
     test_triples = config.test_triples
+    train_set = set(config.train_list)
     sample_size = config.sample_size
     validate_every = config.validate_every
     negative_rate = 1
@@ -28,6 +29,9 @@ def main():
     model = DynamicKGE(num_entities, num_relations, config.dim, config.norm).cuda()
     print("model:")
     print(model)
+
+    # bern sampling, number of tail per head, head per tail
+    tph, hpt = bern_sampling_prepare(config.train_list)
 
     if config.optimizer == "SGD":
         optimizer = optim.SGD(model.parameters(), lr=config.learning_rate)
@@ -52,7 +56,7 @@ def main():
         # sample from whole graph
         sample_index = np.random.choice(len(train_triples), sample_size, replace=False)
         sample_edges = train_triples[sample_index]
-        train_data = generate_graph_and_negative_sampling(sample_edges, num_relations)
+        train_data = generate_graph_and_negative_sampling(sample_edges, num_relations, train_set, tph, hpt)
 
         train_data.to(device_cuda)
 
