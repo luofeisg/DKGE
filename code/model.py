@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+
 from util.train_util import uniform, scatter
 
 class DynamicKGE(nn.Module):
@@ -93,8 +94,8 @@ class DynamicKGE(nn.Module):
 
         # relation_context = F.relu(relation_context, relation_index, relation_type, relation_norm, )
         # gcn
-        relation_context = torch.matmul(DAD_rel, relation_context)
-        relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
+        # relation_context = torch.matmul(DAD_rel, relation_context)
+        # relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
 
         # calculate joint embedding
         entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
@@ -131,7 +132,7 @@ class DKGE_Online(nn.Module):
         self.relation_context = nn.Embedding(num_relations, dim)
 
         # self.entity_gcn_weight = nn.Parameter(torch.Tensor(config.dim, config.dim), requires_grad=False)
-        # self.relation_gcn_weight = nn.Parameter(torch.Tensor(dim, dim))
+        self.relation_gcn_weight = nn.Parameter(torch.Tensor(dim, dim))
 
         self.gate_entity = nn.Parameter(torch.Tensor(dim))
         self.gate_relation = nn.Parameter(torch.Tensor(dim))
@@ -192,19 +193,30 @@ class DKGE_Online(nn.Module):
     def reg_loss(self, entity_o, relation_o):
         return torch.mean(entity_o.pow(2)) + torch.mean(relation_o.pow(2))
 
+    # def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel, affected_entities, affected_relations):
     def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
+        entity_emb = self.entity_emb[entity.long()]
+        relation_emb = self.relation_emb
         entity_context = self.entity_context(entity.long())
-        relation_idx = torch.arange(self.num_relations).cuda()
-        relation_context = self.relation_context(relation_idx)
+        relation_context = self.relation_context.weight
 
-        entity_context = F.relu(self.conv1(entity_context, edge_index, edge_type, edge_norm))
+        num_entity = entity.shape[0]
+
+        # rgcn
+        entity_context = F.relu(self.conv1_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity))
         # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
-        entity_context = F.relu(self.conv2(entity_context, edge_index, edge_type, edge_norm))
+        # entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
 
-        relation_context = torch.matmul(DAD_rel, relation_context)
-        relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
+        # relation_context = F.relu(relation_context, relation_index, relation_type, relation_norm, )
+        # gcn
+        # relation_context = torch.matmul(DAD_rel, relation_context)
+        # relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
 
-        return entity_context, relation_context
+        # calculate joint embedding
+        entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
+        relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
+
+        return entity_o, relation_o
 
 class RGCNConv(nn.Module):
     r"""The relational graph convolutional operator from the `"Modeling
@@ -228,9 +240,10 @@ class RGCNConv(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_relations = num_relations
+        self.num_bases = 4
 
-        # self.basis = nn.Parameter(torch.Tensor(num_bases, in_channels, out_channels))
-        # self.att = nn.Parameter(torch.Tensor(num_relations, num_bases))
+        self.basis = nn.Parameter(torch.Tensor(self.num_bases, in_channels, out_channels))
+        self.att = nn.Parameter(torch.Tensor(num_relations, self.num_bases))
 
         self.weight_relation = nn.Parameter(torch.Tensor(num_relations, in_channels, out_channels))
         stdv = 1. / math.sqrt(self.weight_relation.size(1))
@@ -244,16 +257,18 @@ class RGCNConv(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        size = self.in_channels
-        # uniform(size, self.basis)
-        # uniform(size, self.att)
+        size = self.num_bases * self.in_channels
+        uniform(size, self.basis)
+        uniform(size, self.att)
         uniform(size, self.root)
         uniform(size, self.bias)
 
     def forward(self, x, edge_index, edge_type, edge_norm, dim):
         # message passing
         x_j = x[edge_index[0]]
-        w = self.weight_relation
+        # w = self.weight_relation
+        w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
+        w = w.view(self.num_relations, self.in_channels, self.out_channels)
         num_edges = edge_type.shape[0]
         if num_edges > 100000:  # for testing, do not calculate gradient
             with torch.no_grad():
@@ -282,6 +297,6 @@ class RGCNConv(nn.Module):
                 out = out + self.root
             else:
                 out = out + torch.matmul(x, self.root) # self loop
-        # if self.bias is not None:
-        #     out = out + self.bias
+        if self.bias is not None:
+            out = out + self.bias
         return out

@@ -15,12 +15,12 @@ parser.add_argument('-m', '--margin', type=float, dest='margin', help='margin', 
 parser.add_argument('-l', '--learning_rate', type=float, dest="learning_rate", help="learning rate", required=False, default=0.005)
 parser.add_argument('-d', '--dimension', type=int, dest="dimension", help="dimension", required=False, default=100)
 parser.add_argument('-n', '--norm', type=int, dest="norm", help="normalization", required=False, default=2)
-parser.add_argument('-o', '--optim', type=str, dest="optim", help="optimizer", required=False, default="SGD")
+parser.add_argument('-o', '--optim', type=str, dest="optim", help="optimizer", required=False, default="Adam")
 parser.add_argument('-p1', '--path1', type=str, dest="dataset_v1", help="dataset_v1 path", required=False, default="YAGO-3SP/snapshot1")
 parser.add_argument('-p2', '--path2', type=str, dest="dataset_v2", help="dataset_v2 path", required=False, default="YAGO-3SP/snapshot2")
 parser.add_argument('-g', '--gpu', type=int, dest="gpu_id", help="select gpu", required=False, default=0)
 parser.add_argument('-s', '--sample_size', type=int, dest="sample_size", help="sample size", required=False, default=3000)
-# parser.add_argument('-t', '--test', type=int, dest="test_epoch", help="test epoch", required=False, default=0)
+parser.add_argument('-v', '--validate_every', type=int, dest="validate_every", help="validate every n epochs", required=False, default=1000)
 args = parser.parse_args()
 
 os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
@@ -34,7 +34,7 @@ entity_set = set(range(entity_total))
 relation_set = set(range(relation_total))
 
 train_list = read_file(file_name='./data/' + dataset_v2 + '/train2id.txt')
-valid_list = read_file(file_name='./data/' + dataset_v1 + '/valid2id.txt')
+valid_list = read_file(file_name='./data/' + dataset_v2 + '/valid2id.txt')
 test_list = read_file(file_name='./data/' + dataset_v2 + '/test2id.txt')
 
 train_triples = np.array(train_list)
@@ -46,16 +46,14 @@ print('relation_total: ' + str(relation_total))
 print('train_total: ' + str(len(train_list)))
 print('test_total: ' + str(len(test_list)))
 
-max_context = 30
 train_times = args.train_epochs
 learning_rate = args.learning_rate
-# batch_size = args.batchsize
-# nbatchs = math.ceil(len(train_list) / batch_size)
 margin = args.margin
 dim = args.dimension
 norm = args.norm
 optimizer = args.optim
 sample_size = args.sample_size
+validate_every = args.validate_every
 bern = True
 res_dir = './data/' + dataset_v2 + '/parameters/'
 if not os.path.exists(res_dir):
@@ -65,8 +63,6 @@ model_state_file = './data/' + dataset_v2 + '/parameters/OL_model_state.pth'
 
 print('train_times: ' + str(train_times))
 print('learning_rate: ' + str(learning_rate))
-# print('batch_size: ' + str(batch_size))
-# print('nbatchs: ' + str(nbatchs))
 print('dim: ' + str(dim))
 print('margin: ' + str(margin))
 print('sample_size: ' + str(sample_size))
@@ -132,24 +128,34 @@ def prepare_online_data(parameter_path):
         new_model_parameter['entity_context.weight'][id2] = old_model_parameter['entity_context.weight'][id1]
 
     # relation
+    num_bases = 4
     new_model_parameter['relation_emb'] = torch.zeros(relation_total, dim).cuda()
     new_model_parameter['relation_context.weight'] = torch.zeros(relation_total, dim).cuda()
-    new_model_parameter['conv1_entity.weight'] = torch.zeros(relation_total*2, dim)
-    new_model_parameter['conv2_entity.weight'] = torch.zeros(relation_total*2, dim)
     nn.init.xavier_uniform_(new_model_parameter['relation_emb'])
     nn.init.xavier_uniform_(new_model_parameter['relation_context.weight'])
-    nn.init.xavier_uniform_(new_model_parameter['conv1.att'])
-    nn.init.xavier_uniform_(new_model_parameter['conv2.att'])
+    new_model_parameter['conv1_entity.att'] = torch.zeros(relation_total*2, num_bases)
+    new_model_parameter['conv2_entity.att'] = torch.zeros(relation_total*2, num_bases)
+    uniform(num_bases * dim, new_model_parameter['conv1_entity.att'])    # self.num_bases * self.in_channels
+    uniform(num_bases * dim, new_model_parameter['conv2_entity.att'])
+    nn.init.xavier_uniform_(new_model_parameter['conv1_entity.att'])
+    nn.init.xavier_uniform_(new_model_parameter['conv2_entity.att'])
+    new_model_parameter['conv1_entity.weight_relation'] = torch.zeros(relation_total*2, dim, dim)
+    new_model_parameter['conv2_entity.weight_relation'] = torch.zeros(relation_total * 2, dim, dim)
+    stdv = 1. / math.sqrt(dim)
+    new_model_parameter['conv1_entity.weight_relation'].data.uniform_(-stdv, stdv)
+    new_model_parameter['conv2_entity.weight_relation'].data.uniform_(-stdv, stdv)
     relation_total_old = len(relation_mapping_dict.keys())
     for id1, id2 in relation_mapping_dict.items():
-        new_model_parameter['relation_emb'][id2] = old_model_parameter['relation_emb.weight'][id1]
+        new_model_parameter['relation_emb'][id2] = old_model_parameter['relation_emb'][id1]
         new_model_parameter['relation_context.weight'][id2] = old_model_parameter['relation_context.weight'][id1]
-        new_model_parameter['conv1.att'][id2] = old_model_parameter['conv1.att'][id1]
-        new_model_parameter['conv2.att'][id2] = old_model_parameter['conv2.att'][id1]
-        new_model_parameter['conv1.att'][id2+relation_total] = old_model_parameter['conv1.att'][id1+relation_total_old]
-        new_model_parameter['conv2.att'][id2+relation_total] = old_model_parameter['conv2.att'][id1+relation_total_old]
+        new_model_parameter['conv1_entity.att'][id2] = old_model_parameter['conv1_entity.att'][id1]
+        new_model_parameter['conv2_entity.att'][id2] = old_model_parameter['conv2_entity.att'][id1]
+        new_model_parameter['conv1_entity.att'][id2+relation_total] = old_model_parameter['conv1_entity.att'][id1+relation_total_old]
+        new_model_parameter['conv2_entity.att'][id2+relation_total] = old_model_parameter['conv2_entity.att'][id1+relation_total_old]
+        new_model_parameter['conv1_entity.weight_relation'][id2] = old_model_parameter['conv1_entity.weight_relation'][id1]
+        new_model_parameter['conv1_entity.weight_relation'][id2+relation_total] = old_model_parameter['conv1_entity.weight_relation'][id1+relation_total_old]
 
-    return new_model_parameter, np.array(affected_triples)
+    return new_model_parameter, np.array(affected_triples), np.array(affected_entities), np.array(affected_relations)
 
     # entity_o_emb, relation_o_emb = load_o_emb(parameter_path, entity_total, relation_total, dim, input=True)
     #

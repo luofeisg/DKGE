@@ -12,7 +12,7 @@ parser.add_argument('-m', '--margin', type=float, dest='margin', help='margin', 
 parser.add_argument('-l', '--learning_rate', type=float, dest="learning_rate", help="learning rate", required=False, default=0.005)
 parser.add_argument('-d', '--dimension', type=int, dest="dimension", help="dimension", required=False, default=100)
 parser.add_argument('-n', '--norm', type=int, dest="norm", help="normalization", required=False, default=2)
-parser.add_argument('-o', '--optim', type=str, dest="optim", help="optimizer", required=False, default="SGD")
+parser.add_argument('-o', '--optim', type=str, dest="optim", help="optimizer", required=False, default="Adam")
 parser.add_argument('-p', '--path', type=str, dest="dataset", help="dataset path", required=False, default="YAGO-3SP/snapshot1")
 parser.add_argument('-t', '--test_mode', type=bool, dest="test_mode", help="if test mode on", required=False, default=False)
 parser.add_argument('-g', '--gpu', type=int, dest="gpu_id", help="select gpu", required=False, default=0)
@@ -43,16 +43,12 @@ print('train_total: ' + str(len(train_triples)))
 print('valid_total: ' + str(len(valid_triples)))
 print('test_total: ' + str(len(test_triples)))
 
-max_context = 30
 train_times = args.train_epochs
 learning_rate = args.learning_rate
-# batch_size = args.batchsize
-# nbatchs = math.ceil(len(train_triples) / batch_size)
 margin = args.margin
 dim = args.dimension
 norm = args.norm
 optimizer = args.optim
-test_mode = args.test_mode
 sample_size = args.sample_size
 validate_every = args.validate_every
 bern = True
@@ -64,8 +60,6 @@ model_state_file = './data/' + dataset_v1 + '/parameters/LFS_model_state.pth'
 print('train_times: ' + str(train_times))
 print('learning_rate: ' + str(learning_rate))
 print('sample_size: ' + str(sample_size))
-# print('batch_size: ' + str(batch_size))
-# print('nbatchs: ' + str(nbatchs))
 print('dim: ' + str(dim))
 print('margin: ' + str(margin))
 print('bern: ' + str(bern))
