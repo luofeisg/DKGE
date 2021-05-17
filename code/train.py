@@ -82,18 +82,18 @@ def main():
         if epoch % validate_every == 0:
             model.eval()
             with torch.no_grad():
-                test_graph = generate_graph_and_negative_sampling(train_triples, config.relation_total)
+                test_graph = generate_graph_and_negative_sampling(train_triples, num_relations, train_set)
                 test_graph.to(device_cuda)
                 entity_o, relation_o = model(test_graph.entity, test_graph.edge_index, test_graph.edge_type,
                                                      test_graph.edge_norm, test_graph.DAD_rel)
 
                 print('validate link prediction on train set starts...')
-                index = np.random.choice(train_triples.shape[0], 200)
+                index = np.random.choice(train_triples.shape[0], 1000)
                 test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
                 print('valid link prediction on train set ends...')
 
                 print('validation on validation set starts...')
-                mrr = test.test_link_prediction(valid_triples[0:1000], entity_o, relation_o, config.norm)
+                mrr = test.test_link_prediction(valid_triples, entity_o, relation_o, config.norm)
                 print('validation on validation set ends...')
 
                 if mrr > best_mrr:
@@ -116,13 +116,13 @@ def main():
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
     with torch.no_grad():
-        test_graph = generate_graph_and_negative_sampling(train_triples, config.relation_total)
+        test_graph = generate_graph_and_negative_sampling(train_triples, num_relations, train_set)
         test_graph.to(device_cuda)
         entity_o, relation_o = model(test_graph.entity, test_graph.edge_index, test_graph.edge_type,
                                      test_graph.edge_norm, test_graph.DAD_rel)
 
         print('test link prediction on train set starts...')
-        index = np.random.choice(train_triples.shape[0], 200)
+        index = np.random.choice(train_triples.shape[0], 1000)
         test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
         print('test link prediction on train set ends...')
 

@@ -614,7 +614,7 @@ def bern_sampling_prepare(train_list):
     return tph, hpt
 
 
-def one_negative_sampling(golden_triple, train_set, entity_total, bern=True, tph=0.0, hpt=0.0):
+def one_negative_sampling(golden_triple, train_set, entity_total, bern=True, tph=1.0, hpt=1.0):
     h, r, t = golden_triple
     if not bern:  # uniform sampling
         while True:

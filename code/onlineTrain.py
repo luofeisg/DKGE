@@ -6,7 +6,7 @@ import torch.optim as optim
 
 from config import online_config as config
 import test
-from util.train_util import generate_graph_and_negative_sampling, generate_test_graph
+from util.train_util import *
 from model import DKGE_Online
 
 # gpu_ids = [0, 1]
@@ -22,6 +22,7 @@ def main():
     train_triples = config.train_triples
     valid_triples = config.valid_triples
     test_triples = config.test_triples
+    train_set = set(config.train_list)
     validate_every = config.validate_every
     model_state_file = config.model_state_file
 
@@ -29,6 +30,8 @@ def main():
     device_cpu = torch.device('cpu')
     best_mrr = 0
     best_mrr_epoch = 0
+
+    tph, hpt = bern_sampling_prepare(config.train_list)
 
     print('train starting...')
     model = DKGE_Online(num_entities, num_relations, config.dim, config.norm).cuda()
@@ -66,7 +69,7 @@ def main():
         # sample from affected triples
         sample_index = np.random.choice(len(affected_triples), sample_size, replace=False)
         sample_edges = affected_triples[sample_index]
-        train_data = generate_graph_and_negative_sampling(sample_edges, num_relations)
+        train_data = generate_graph_and_negative_sampling(sample_edges, num_relations, train_set, tph, hpt)
         train_data.to(device_cuda)
 
         # entity_o, relation_o = model(train_data.entity, train_data.edge_index, train_data.edge_type, train_data.edge_norm, train_data.DAD_rel, affected_entities, affected_relations)
@@ -96,18 +99,18 @@ def main():
         if epoch % validate_every == 0:
             model.eval()
             with torch.no_grad():
-                test_graph = generate_graph_and_negative_sampling(train_triples, config.relation_total)
+                test_graph = generate_graph_and_negative_sampling(train_triples, config.relation_total, train_set)
                 test_graph.to(device_cuda)
                 entity_o, relation_o = model(test_graph.entity, test_graph.edge_index, test_graph.edge_type,
                                              test_graph.edge_norm, test_graph.DAD_rel)
 
                 print('validate link prediction on train set starts...')
-                index = np.random.choice(train_triples.shape[0], 100)
+                index = np.random.choice(train_triples.shape[0], 1000)
                 test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
                 print('valid link prediction on train set ends...')
 
                 print('validation on validation set starts...')
-                mrr = test.test_link_prediction(valid_triples[0:100], entity_o, relation_o, config.norm)
+                mrr = test.test_link_prediction(valid_triples, entity_o, relation_o, config.norm)
                 print('validation on validation set ends...')
 
                 if mrr > best_mrr:
@@ -130,18 +133,18 @@ def main():
     model.load_state_dict(checkpoint['state_dict'])
     model.eval()
     with torch.no_grad():
-        test_graph = generate_graph_and_negative_sampling(train_triples, config.relation_total)
+        test_graph = generate_graph_and_negative_sampling(train_triples, config.relation_total, train_set)
         test_graph.to(device_cuda)
         entity_o, relation_o = model(test_graph.entity, test_graph.edge_index, test_graph.edge_type,
                                      test_graph.edge_norm, test_graph.DAD_rel)
 
         print('test link prediction on train set starts...')
-        index = np.random.choice(train_triples.shape[0], 100)
+        index = np.random.choice(train_triples.shape[0], 1000)
         test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
         print('test link prediction on train set ends...')
 
         print('test link prediction on test set starts...')
-        test.test_link_prediction(test_triples[0:100], entity_o, relation_o, config.norm)
+        test.test_link_prediction(test_triples, entity_o, relation_o, config.norm)
         print('test link prediction on test set ends...')
 
 if __name__ == "__main__":
