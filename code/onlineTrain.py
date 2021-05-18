@@ -18,7 +18,7 @@ def main():
 
     num_entities = config.entity_total
     num_relations = config.relation_total
-    sample_size = config.sample_size
+    sample_size = min(affected_triples.shape[0], config.sample_size)
     train_triples = config.train_triples
     valid_triples = config.valid_triples
     test_triples = config.test_triples

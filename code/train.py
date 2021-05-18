@@ -56,7 +56,7 @@ def main():
         # sample from whole graph
         sample_index = np.random.choice(len(train_triples), sample_size, replace=False)
         sample_edges = train_triples[sample_index]
-        train_data = generate_graph_and_negative_sampling(sample_edges, num_relations, train_set, tph, hpt)
+        train_data = generate_graph_and_negative_sampling(sample_edges, num_relations, train_set)
 
         train_data.to(device_cuda)
 

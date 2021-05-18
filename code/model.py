@@ -299,6 +299,5 @@ class RGCNConv(nn.Module):
             else:
                 out = out + torch.matmul(x, self.root) # self loop
         if self.bias is not None:
-            # out = out + self.bias
-            pass
+            out = out + self.bias
         return out
