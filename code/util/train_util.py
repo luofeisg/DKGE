@@ -269,7 +269,7 @@ def generate_graph_and_negative_sampling(triples, relation_total, train_set, tph
     relabeled_edges = np.stack((head, rel, tail)).transpose()
 
     # Negative sampling
-    samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), train_set, tph, hpt, negative_rate=1)
+    samples, labels = negative_sampling(relabeled_edges, len(uniq_entity), train_set, tph, hpt)
     samples = torch.from_numpy(samples)
 
     # further split graph, only half of the edges will be used as graph
