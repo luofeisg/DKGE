@@ -204,8 +204,8 @@ class DKGE_Online(nn.Module):
 
         # rgcn
         entity_context = F.relu(self.conv1_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity))
-        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
-        # entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
+        entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
 
         # relation_context = F.relu(relation_context, relation_index, relation_type, relation_norm, )
         # gcn
@@ -257,7 +257,8 @@ class RGCNConv(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        size = self.num_bases * self.in_channels
+        # size = self.num_bases * self.in_channels
+        size = self.in_channels
         uniform(size, self.basis)
         uniform(size, self.att)
         uniform(size, self.root)
@@ -289,7 +290,7 @@ class RGCNConv(nn.Module):
             out = out * edge_norm.view(-1, 1)
 
         # aggregate
-        out = scatter(out, edge_index[1], dim=-2, dim_size=dim, reduce='sum')
+        out = scatter(out, edge_index[0], dim=-2, dim_size=dim, reduce='sum')
 
         # update
         if self.root is not None:   #self loop
@@ -298,5 +299,6 @@ class RGCNConv(nn.Module):
             else:
                 out = out + torch.matmul(x, self.root) # self loop
         if self.bias is not None:
-            out = out + self.bias
+            # out = out + self.bias
+            pass
         return out
