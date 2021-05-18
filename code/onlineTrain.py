@@ -105,12 +105,12 @@ def main():
                                              test_graph.edge_norm, test_graph.DAD_rel)
 
                 print('validate link prediction on train set starts...')
-                index = np.random.choice(train_triples.shape[0], 100)
+                index = np.random.choice(train_triples.shape[0], 500)
                 test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
                 print('valid link prediction on train set ends...')
 
                 print('validation on validation set starts...')
-                mrr = test.test_link_prediction(valid_triples[0:100], entity_o, relation_o, config.norm)
+                mrr = test.test_link_prediction(valid_triples, entity_o, relation_o, config.norm)
                 print('validation on validation set ends...')
 
                 if mrr > best_mrr:
@@ -139,12 +139,12 @@ def main():
                                      test_graph.edge_norm, test_graph.DAD_rel)
 
         print('test link prediction on train set starts...')
-        index = np.random.choice(train_triples.shape[0], 100)
+        index = np.random.choice(train_triples.shape[0], 500)
         test.test_link_prediction(train_triples[index], entity_o, relation_o, config.norm)
         print('test link prediction on train set ends...')
 
         print('test link prediction on test set starts...')
-        test.test_link_prediction(test_triples[0:100], entity_o, relation_o, config.norm)
+        test.test_link_prediction(test_triples, entity_o, relation_o, config.norm)
         print('test link prediction on test set ends...')
 
 if __name__ == "__main__":
