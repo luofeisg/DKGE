@@ -89,8 +89,8 @@ class DynamicKGE(nn.Module):
 
         # rgcn
         entity_context = F.relu(self.conv1_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity))
-        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
-        # entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
+        entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
 
         # relation_context = F.relu(relation_context, relation_index, relation_type, relation_norm, )
         # gcn
@@ -266,9 +266,9 @@ class RGCNConv(nn.Module):
     def forward(self, x, edge_index, edge_type, edge_norm, dim):
         # message passing
         x_j = x[edge_index[0]]
-        # w = self.weight_relation
-        w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
-        w = w.view(self.num_relations, self.in_channels, self.out_channels)
+        w = self.weight_relation
+        # w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
+        # w = w.view(self.num_relations, self.in_channels, self.out_channels)
         num_edges = edge_type.shape[0]
         if num_edges > 100000:  # for testing, do not calculate gradient
             with torch.no_grad():
