@@ -271,7 +271,7 @@ class RGCNConv(nn.Module):
         # w = torch.matmul(self.att, self.basis.view(self.num_bases, -1))
         # w = w.view(self.num_relations, self.in_channels, self.out_channels)
         num_edges = edge_type.shape[0]
-        if num_edges > 100000:  # for testing, do not calculate gradient
+        if num_edges > 80000:  # for validation/test, do not calculate gradient
             with torch.no_grad():
                 batch_size = 3000
                 batches = math.ceil(num_edges / batch_size)
