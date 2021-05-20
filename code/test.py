@@ -50,8 +50,8 @@ def get_rank(scores, golden_score):
     res = np.count_nonzero(scores < golden_score, axis=0) + 1
     return res
 
-def test_head(golden_triple, entity_emb, relation_emb, norm):
-    head_batch = get_head_batch(golden_triple, len(entity_emb))
+def test_head(golden_triple, entity_emb, relation_emb, norm, num_entities):
+    head_batch = get_head_batch(golden_triple, num_entities)
     scores = cal_score(entity_emb, relation_emb, head_batch, norm)
     golden_score = scores[golden_triple[0]]
     # value = predict(head_batch, entity_emb, relation_emb, norm)
@@ -70,8 +70,8 @@ def test_head(golden_triple, entity_emb, relation_emb, norm):
     # return res, res - sub
 
 
-def test_tail(golden_triple, entity_emb, relation_emb, norm):
-    tail_batch = get_tail_batch(golden_triple, len(entity_emb))
+def test_tail(golden_triple, entity_emb, relation_emb, norm, num_entities):
+    tail_batch = get_tail_batch(golden_triple, num_entities)
     scores = cal_score(entity_emb, relation_emb, tail_batch, norm)
     golden_score = scores[golden_triple[2]]
     # value = predict(tail_batch, entity_emb, relation_emb, norm)
@@ -89,15 +89,16 @@ def test_tail(golden_triple, entity_emb, relation_emb, norm):
     return res
 
 
-def test_link_prediction(test_triples, entity_o, relation_o, norm):
+def test_link_prediction(test_triples, train_triples, entity_o, relation_o, norm):
     hits = [1, 3, 10]
+    num_entities = np.unique(train_triples).max()
 
     l_rank = []
     r_rank = []
 
     for i, golden_triple in enumerate(test_triples):
-        l_pos = test_head(golden_triple, entity_o, relation_o, norm)
-        r_pos = test_tail(golden_triple, entity_o, relation_o, norm)  # position, 1-based
+        l_pos = test_head(golden_triple, entity_o, relation_o, norm, num_entities)
+        r_pos = test_tail(golden_triple, entity_o, relation_o, norm, num_entities)  # position, 1-based
 
         l_rank.append(l_pos)
         r_rank.append(r_pos)
