@@ -80,26 +80,29 @@ class DynamicKGE(nn.Module):
         return torch.mean(entity_o.pow(2)) + torch.mean(relation_o.pow(2))
 
     def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
-        entity_emb = self.entity_emb[entity.long()]
-        relation_emb = self.relation_emb
-        entity_context = self.entity_context(entity.long())
-        relation_context = self.relation_context.weight
+        # entity_emb = self.entity_emb[entity.long()]
+        # relation_emb = self.relation_emb
+        # entity_context = self.entity_context(entity.long())
+        # relation_context = self.relation_context.weight
+        #
+        # num_entity = entity.shape[0]
+        #
+        # # rgcn
+        # entity_context = F.relu(self.conv1_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity))
+        # # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        # # entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
+        #
+        # # relation_context = F.relu(relation_context, relation_index, relation_type, relation_norm, )
+        # # gcn
+        # # relation_context = torch.matmul(DAD_rel, relation_context)
+        # # relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
+        #
+        # # calculate joint embedding
+        # entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
+        # relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
 
-        num_entity = entity.shape[0]
-
-        # rgcn
-        entity_context = F.relu(self.conv1_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity))
-        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
-        # entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
-
-        # relation_context = F.relu(relation_context, relation_index, relation_type, relation_norm, )
-        # gcn
-        # relation_context = torch.matmul(DAD_rel, relation_context)
-        # relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
-
-        # calculate joint embedding
-        entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
-        relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
+        entity_o = self.entity_emb[entity.long()]
+        relation_o = self.relation_emb
 
         return entity_o, relation_o
 

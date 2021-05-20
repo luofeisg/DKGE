@@ -91,7 +91,7 @@ def test_tail(golden_triple, entity_emb, relation_emb, norm, num_entities):
 
 def test_link_prediction(test_triples, train_triples, entity_o, relation_o, norm):
     hits = [1, 3, 10]
-    num_entities = np.unique(train_triples).max()
+    num_entities = np.unique(train_triples).max() + 1
 
     l_rank = []
     r_rank = []
