@@ -67,51 +67,51 @@ class DynamicKGE(nn.Module):
         return score
 
     def score_loss(self, entity_o, relation_o, triplets, target):
-        h = entity_o[triplets[:, 0]]
-        r = relation_o[triplets[:, 1]]
-        t = entity_o[triplets[:, 2]]
+        # h = entity_o[triplets[:, 0]]
+        # r = relation_o[triplets[:, 1]]
+        # t = entity_o[triplets[:, 2]]
+        # score = torch.norm(h + r - t, p=self.norm, dim=1)
 
-        # score = self.distmult(entity_o, relation_o, triplets)
-        # return F.binary_cross_entropy_with_logits(score, target)
-        score = torch.norm(h + r - t, p=self.norm, dim=1)
+        score = self.distmult(entity_o, relation_o, triplets)
+        return F.binary_cross_entropy_with_logits(score, target)
         return score
 
     def reg_loss(self, entity_o, relation_o):
         return torch.mean(entity_o.pow(2)) + torch.mean(relation_o.pow(2))
 
     def forward(self, entity, edge_index, edge_type, edge_norm, DAD_rel):
-        entity_emb = self.entity_emb[entity.long()]
-        relation_emb = self.relation_emb
-        entity_context = self.entity_context(entity.long())
-        relation_context = self.relation_context.weight
-
+        # entity_emb = self.entity_emb[entity.long()]
+        # relation_emb = self.relation_emb
+        # entity_context = self.entity_context(entity.long())
+        # relation_context = self.relation_context.weight
+        #
         num_entity = entity.shape[0]
-
-        # rgcn
-        entity_context = F.relu(self.conv1_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity))
-        # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
-        # entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
-
-        # relation_context = F.relu(relation_context, relation_index, relation_type, relation_norm, )
-        # gcn
-        # relation_context = torch.matmul(DAD_rel, relation_context)
-        # relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
-
-        # calculate joint embedding
-        entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
-        relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
-
-        return entity_o, relation_o
+        #
+        # # rgcn
+        # entity_context = F.relu(self.conv1_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity))
+        # # entity_context = F.dropout(entity_context, p=0.2, training=self.training)
+        # # entity_context = self.conv2_entity(entity_context, edge_index, edge_type, edge_norm, dim=num_entity)
+        #
+        # # relation_context = F.relu(relation_context, relation_index, relation_type, relation_norm, )
+        # # gcn
+        # # relation_context = torch.matmul(DAD_rel, relation_context)
+        # # relation_context = F.relu(torch.matmul(relation_context, self.relation_gcn_weight))
+        #
+        # # calculate joint embedding
+        # entity_o = torch.mul(torch.sigmoid(self.gate_entity), entity_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), entity_context)
+        # relation_o = torch.mul(torch.sigmoid(self.gate_relation), relation_emb) + torch.mul(1 - torch.sigmoid(self.gate_entity), relation_context)
+        #
+        # return entity_o, relation_o
 
         # pure RGCN
-        # entity_emb = self.entity_emb(entity.long())
-        # relation_emb = self.relation_emb
-        #
-        # entity_emb = F.relu(self.conv1(entity_emb, edge_index, edge_type, edge_norm))
-        # entity_emb = F.dropout(entity_emb, p=0.2, training=self.training)
-        # entity_emb = self.conv2(entity_emb, edge_index, edge_type, edge_norm)
-        #
-        # return entity_emb, relation_emb
+        entity_emb = self.entity_emb[entity.long()]
+        relation_emb = self.relation_emb
+
+        entity_emb = F.relu(self.conv1_entity(entity_emb, edge_index, edge_type, edge_norm, dim=num_entity))
+        entity_emb = F.dropout(entity_emb, p=0.2, training=self.training)
+        entity_emb = self.conv2_entity(entity_emb, edge_index, edge_type, edge_norm, dim=num_entity)
+
+        return entity_emb, relation_emb
 
 class DKGE_Online(nn.Module):
     def __init__(self, num_entities, num_relations, dim, norm):

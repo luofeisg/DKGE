@@ -67,8 +67,8 @@ def main():
         # p_scores = model._calc(head_o[0:train_data.samples.size()[0]//2], tail_o[0:train_data.samples.size()[0]//2], rel_o[0:train_data.samples.size()[0]//2])
         # n_scores = model._calc(head_o[train_data.samples.size()[0]//2:], tail_o[train_data.samples.size()[0]//2:], rel_o[train_data.samples.size()[0]//2:])
 
-        y = torch.Tensor([-1]*sample_size).cuda()
-        loss = criterion(loss[:len(loss)//2], loss[len(loss)//2:], y)
+        # y = torch.Tensor([-1]*sample_size).cuda()
+        # loss = criterion(loss[:len(loss)//2], loss[len(loss)//2:], y)
 
         loss.backward()
         optimizer.step()
