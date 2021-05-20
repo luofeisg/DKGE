@@ -88,7 +88,7 @@ def main():
                                                      test_graph.edge_norm, test_graph.DAD_rel)
 
                 print('validate link prediction on train set starts...')
-                index = np.random.choice(train_triples.shape[0], 1000)
+                index = np.random.choice(train_triples.shape[0], 500)
                 test.test_link_prediction(train_triples[index], train_triples, entity_o, relation_o, config.norm)
                 print('valid link prediction on train set ends...')
 
@@ -122,7 +122,7 @@ def main():
                                      test_graph.edge_norm, test_graph.DAD_rel)
 
         print('test link prediction on train set starts...')
-        index = np.random.choice(train_triples.shape[0], 1000)
+        index = np.random.choice(train_triples.shape[0], 500)
         test.test_link_prediction(train_triples[index], train_triples, entity_o, relation_o, config.norm)
         print('test link prediction on train set ends...')
 
